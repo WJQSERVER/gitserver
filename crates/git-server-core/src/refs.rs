@@ -38,15 +38,13 @@ pub fn advertise_refs(repo_path: &Path) -> Result<Vec<u8>> {
     }
 
     // Iterate all references
-    if let Ok(platform) = repo.references() {
-        if let Ok(iter) = platform.all() {
-            for reference in iter {
-                if let Ok(mut r) = reference {
-                    let name = r.name().as_bstr().to_string();
-                    if let Ok(id) = r.peel_to_id() {
-                        refs.push((id.to_string(), name));
-                    }
-                }
+    if let Ok(platform) = repo.references()
+        && let Ok(iter) = platform.all()
+    {
+        for mut r in iter.flatten() {
+            let name = r.name().as_bstr().to_string();
+            if let Ok(id) = r.peel_to_id() {
+                refs.push((id.to_string(), name));
             }
         }
     }

@@ -12,10 +12,16 @@ pub enum Error {
     InvalidRepo(PathBuf, String),
 
     #[error("git operation failed: {0}")]
-    Git(#[from] gix::open::Error),
+    Git(Box<gix::open::Error>),
 
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
+}
+
+impl From<gix::open::Error> for Error {
+    fn from(e: gix::open::Error) -> Self {
+        Error::Git(Box::new(e))
+    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

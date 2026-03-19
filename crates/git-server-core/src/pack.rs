@@ -264,10 +264,7 @@ pub fn generate_pack(
                 }
             }
             Err(e) => {
-                let _ = tx.blocking_send(Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    e.to_string(),
-                )));
+                let _ = tx.blocking_send(Err(std::io::Error::other(e.to_string())));
             }
         }
     });

@@ -1,6 +1,6 @@
-/// pkt-line encoding as defined by Git protocol.
-/// Format: 4-hex-digit length prefix (includes the 4 bytes) + content.
-/// Flush packet: "0000"
+//! pkt-line encoding as defined by Git protocol.
+//! Format: 4-hex-digit length prefix (includes the 4 bytes) + content.
+//! Flush packet: "0000"
 
 /// Encode a single pkt-line.
 pub fn encode(data: &[u8]) -> Vec<u8> {
