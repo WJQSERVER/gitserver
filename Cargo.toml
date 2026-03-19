@@ -4,6 +4,7 @@ members = [
     "crates/git-server-core",
     "crates/git-server-http",
     "crates/git-server",
+    "crates/git-server-bench",
 ]
 
 [workspace.package]
