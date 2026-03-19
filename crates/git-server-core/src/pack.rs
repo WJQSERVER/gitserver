@@ -146,9 +146,15 @@ fn object_type_number(kind: gix::object::Kind) -> u8 {
 /// Wrap data in side-band-64k pkt-line framing (band 1 = pack data).
 ///
 /// Each frame is a pkt-line where the first byte is band 0x01,
-/// followed by up to 65519 bytes of pack data.
+/// followed by pack data.
+///
+/// Git's pkt-line format limits the total line length (including the
+/// 4-byte hex length prefix) to 65520 bytes (LARGE_PACKET_MAX).
+/// With 4 bytes for the length prefix and 1 byte for the band indicator,
+/// the maximum pack data per frame is 65520 - 4 - 1 = 65515 bytes.
 fn sideband_pack_data(data: &[u8]) -> Vec<u8> {
-    const MAX_DATA_PER_FRAME: usize = 65519;
+    // LARGE_PACKET_MAX (65520) - 4 (pkt-len prefix) - 1 (band byte)
+    const MAX_DATA_PER_FRAME: usize = 65515;
     let mut output = Vec::new();
 
     for chunk in data.chunks(MAX_DATA_PER_FRAME) {
