@@ -21,7 +21,7 @@ impl GitBackend {
     pub async fn upload_pack(
         &self,
         request: &UploadPackRequest,
-    ) -> Result<impl AsyncRead> {
+    ) -> Result<impl AsyncRead + use<>> {
         crate::pack::generate_pack(&self.repo_path, request)
     }
 }

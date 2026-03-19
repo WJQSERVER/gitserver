@@ -244,7 +244,7 @@ fn build_packfile(objects: &[PackObject]) -> Vec<u8> {
 pub fn generate_pack(
     repo_path: &Path,
     request: &UploadPackRequest,
-) -> Result<impl AsyncRead + Send + Unpin> {
+) -> Result<impl AsyncRead + Send + Unpin + use<>> {
     // We need owned data for the spawn_blocking closure
     let repo_path = repo_path.to_path_buf();
     let wants: Vec<gix::ObjectId> = request.wants.clone();

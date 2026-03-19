@@ -507,10 +507,13 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "git-server-core",
+ "http-body-util",
  "serde",
  "serde_json",
  "tempfile",
  "tokio",
+ "tokio-util",
+ "tower",
  "tracing",
 ]
 
