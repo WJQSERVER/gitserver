@@ -1,0 +1,45 @@
+name: Benchmarks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: write
+  deployments: write
+  pull-requests: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  bench:
+    name: Benchmark
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Run benchmarks (PR - small+medium only)
+        if: github.event_name == 'pull_request'
+        run: cargo bench -p git-server-bench -- --output-format bencher "small|medium" | tee output.txt
+
+      - name: Run benchmarks (main - all sizes)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: cargo bench -p git-server-bench -- --output-format bencher | tee output.txt
+
+      - name: Store benchmark result
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: git-server Benchmarks
+          tool: cargo
+          output-file-path: output.txt
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          benchmark-data-dir-path: dev/bench
+          gh-pages-branch: gh-pages
+          alert-threshold: "130%"
+          comment-on-alert: true
+          fail-on-alert: true
+          auto-push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
