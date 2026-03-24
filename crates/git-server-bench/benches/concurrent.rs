@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use git_server_bench::fixtures;
 use git_server_core::discovery::RepoStore;
 use std::net::SocketAddr;
@@ -47,7 +47,9 @@ fn bench_concurrent_clones(c: &mut Criterion) {
     group.finish();
 
     let _ = shutdown_tx.send(());
-    rt.block_on(async { let _ = handle.await; });
+    rt.block_on(async {
+        let _ = handle.await;
+    });
 }
 
 async fn start_server(

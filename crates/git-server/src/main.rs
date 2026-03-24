@@ -6,7 +6,11 @@ use tracing::info;
 use git_server_core::discovery::RepoStore;
 
 #[derive(Parser)]
-#[command(name = "git-server", version, about = "Standalone smart HTTP Git server")]
+#[command(
+    name = "git-server",
+    version,
+    about = "Standalone smart HTTP Git server"
+)]
 struct Cli {
     /// Root directory containing bare Git repositories
     root: PathBuf,
@@ -46,9 +50,7 @@ fn init_tracing(level: tracing::Level, format: &LogFormat) {
     let env_filter = tracing_subscriber::EnvFilter::new(level.to_string());
     match format {
         LogFormat::Text => {
-            tracing_subscriber::fmt()
-                .with_env_filter(env_filter)
-                .init();
+            tracing_subscriber::fmt().with_env_filter(env_filter).init();
         }
         LogFormat::Json => {
             tracing_subscriber::fmt()

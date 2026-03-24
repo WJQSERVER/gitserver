@@ -1,6 +1,6 @@
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use git_server_bench::fixtures;
-use git_server_core::pack::{generate_pack, UploadPackRequest};
+use git_server_core::pack::{UploadPackRequest, generate_pack};
 use std::path::Path;
 use tokio::io::AsyncReadExt;
 

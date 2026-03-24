@@ -18,10 +18,7 @@ impl GitBackend {
         crate::refs::advertise_refs(&self.repo_path)
     }
 
-    pub async fn upload_pack(
-        &self,
-        request: &UploadPackRequest,
-    ) -> Result<impl AsyncRead + use<>> {
+    pub async fn upload_pack(&self, request: &UploadPackRequest) -> Result<impl AsyncRead + use<>> {
         crate::pack::generate_pack(&self.repo_path, request)
     }
 }
@@ -38,17 +35,35 @@ mod tests {
         std::fs::create_dir(&work_dir).unwrap();
         Command::new("git")
             .args(["init", "--bare", repo_path.to_str().unwrap()])
-            .output().unwrap();
+            .output()
+            .unwrap();
         Command::new("git")
-            .args(["clone", repo_path.to_str().unwrap(), work_dir.to_str().unwrap()])
-            .output().unwrap();
-        Command::new("git").current_dir(&work_dir)
+            .args(["symbolic-ref", "HEAD", "refs/heads/main"])
+            .current_dir(&repo_path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args([
+                "clone",
+                repo_path.to_str().unwrap(),
+                work_dir.to_str().unwrap(),
+            ])
+            .output()
+            .unwrap();
+        Command::new("git")
+            .current_dir(&work_dir)
             .args(["commit", "--allow-empty", "-m", "init"])
-            .env("GIT_AUTHOR_NAME", "Test").env("GIT_AUTHOR_EMAIL", "t@t.com")
-            .env("GIT_COMMITTER_NAME", "Test").env("GIT_COMMITTER_EMAIL", "t@t.com")
-            .output().unwrap();
-        Command::new("git").current_dir(&work_dir)
-            .args(["push", "origin", "main"]).output().unwrap();
+            .env("GIT_AUTHOR_NAME", "Test")
+            .env("GIT_AUTHOR_EMAIL", "t@t.com")
+            .env("GIT_COMMITTER_NAME", "Test")
+            .env("GIT_COMMITTER_EMAIL", "t@t.com")
+            .output()
+            .unwrap();
+        Command::new("git")
+            .current_dir(&work_dir)
+            .args(["push", "origin", "main"])
+            .output()
+            .unwrap();
         repo_path
     }
 
@@ -77,9 +92,9 @@ mod tests {
         };
         let reader = backend.upload_pack(&request).await.unwrap();
         let mut buf = Vec::new();
-        tokio::io::AsyncReadExt::read_to_end(
-            &mut tokio::io::BufReader::new(reader), &mut buf,
-        ).await.unwrap();
+        tokio::io::AsyncReadExt::read_to_end(&mut tokio::io::BufReader::new(reader), &mut buf)
+            .await
+            .unwrap();
         assert!(buf.windows(4).any(|w| w == b"PACK"));
     }
 }
