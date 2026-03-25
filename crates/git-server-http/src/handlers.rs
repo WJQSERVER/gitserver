@@ -96,13 +96,10 @@ async fn upload_pack_inner(
     let repo_info = store.resolve(repo_path)?;
     let backend = GitBackend::new(repo_info.absolute_path.clone());
     let upload_request = git_server_core::pack::UploadPackRequest::parse(&request)?;
-    let reader = backend
-        .upload_pack(&upload_request)
-        .await
-        .map_err(|e| {
-            tracing::error!("pack generation failed: {e}");
-            AppError::Internal("internal server error".into())
-        })?;
+    let reader = backend.upload_pack(&upload_request).await.map_err(|e| {
+        tracing::error!("pack generation failed: {e}");
+        AppError::Internal("internal server error".into())
+    })?;
     let stream = ReaderStream::new(reader);
     Ok(Response::builder()
         .status(StatusCode::OK)
