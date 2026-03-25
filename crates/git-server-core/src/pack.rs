@@ -83,12 +83,6 @@ impl UploadPackRequest {
     }
 }
 
-/// An object collected for inclusion in the pack.
-struct PackObject {
-    kind: gix::object::Kind,
-    data: Vec<u8>,
-}
-
 /// Encode the variable-length pack object header.
 ///
 /// Format: first byte = MSB continuation + 3-bit type + 4-bit size
@@ -126,104 +120,113 @@ fn object_type_number(kind: gix::object::Kind) -> u8 {
     }
 }
 
-/// Wrap data in side-band-64k pkt-line framing (band 1 = pack data).
-///
-/// Each frame is a pkt-line where the first byte is band 0x01,
-/// followed by pack data.
-///
-/// Git's pkt-line format limits the total line length (including the
-/// 4-byte hex length prefix) to 65520 bytes (LARGE_PACKET_MAX).
-/// With 4 bytes for the length prefix and 1 byte for the band indicator,
-/// the maximum pack data per frame is 65520 - 4 - 1 = 65515 bytes.
-fn sideband_pack_data(data: &[u8]) -> Vec<u8> {
-    // LARGE_PACKET_MAX (65520) - 4 (pkt-len prefix) - 1 (band byte)
-    const MAX_DATA_PER_FRAME: usize = 65515;
-    let mut output = Vec::new();
-
-    for chunk in data.chunks(MAX_DATA_PER_FRAME) {
-        // pkt-line length = 4 (length prefix) + 1 (band byte) + chunk.len()
-        let pkt_len = 4 + 1 + chunk.len();
-        output.extend_from_slice(format!("{pkt_len:04x}").as_bytes());
-        output.push(0x01); // band 1 = pack data
-        output.extend_from_slice(chunk);
-    }
-
-    output
+/// Send raw bytes through the channel.
+fn send(
+    tx: &tokio::sync::mpsc::Sender<std::result::Result<Bytes, std::io::Error>>,
+    data: &[u8],
+) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    tx.blocking_send(Ok(Bytes::copy_from_slice(data)))
+        .map_err(|_| "receiver dropped".into())
 }
 
-/// Collect all objects reachable from a tree, recursively.
-fn collect_tree_objects(
+/// Send pack data through the channel wrapped in side-band-64k framing
+/// (band 1 = pack data).
+///
+/// Respects LARGE_PACKET_MAX: each pkt-line frame carries at most
+/// 65520 - 4 (prefix) - 1 (band byte) = 65515 bytes of payload.
+fn send_sideband(
+    tx: &tokio::sync::mpsc::Sender<std::result::Result<Bytes, std::io::Error>>,
+    data: &[u8],
+) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    const MAX_DATA_PER_FRAME: usize = 65515;
+
+    for chunk in data.chunks(MAX_DATA_PER_FRAME) {
+        let pkt_len = 4 + 1 + chunk.len();
+        let mut frame = Vec::with_capacity(pkt_len);
+        frame.extend_from_slice(format!("{pkt_len:04x}").as_bytes());
+        frame.push(0x01); // band 1 = pack data
+        frame.extend_from_slice(chunk);
+        send(tx, &frame)?;
+    }
+
+    Ok(())
+}
+
+/// Recursively collect tree and blob OIDs reachable from `tree_oid`.
+///
+/// Uses a single `find_object` call per object and parses raw tree
+/// bytes via `TreeRefIter` to avoid a second ODB lookup.
+fn collect_tree_oids(
     repo: &gix::Repository,
     tree_oid: gix::ObjectId,
     seen: &mut HashSet<gix::ObjectId>,
-    objects: &mut Vec<PackObject>,
+    oids: &mut Vec<gix::ObjectId>,
 ) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if !seen.insert(tree_oid) {
         return Ok(());
     }
 
     let tree_obj = repo.find_object(tree_oid)?;
-    let tree_data = tree_obj.data.clone();
-    let tree_kind = tree_obj.kind;
-    objects.push(PackObject {
-        kind: tree_kind,
-        data: tree_data.clone(),
-    });
+    let tree_data = tree_obj.data.to_vec();
+    oids.push(tree_oid);
 
-    // Parse tree entries using gix's TreeRefIter
-    let tree = repo.find_tree(tree_oid)?;
-    for entry_result in tree.iter() {
+    for entry_result in gix::objs::TreeRefIter::from_bytes(&tree_data) {
         let entry = entry_result?;
-        let entry_oid = entry.inner.oid.to_owned();
-        let entry_mode = entry.inner.mode;
+        let entry_oid = entry.oid.to_owned();
+        let entry_mode = entry.mode;
 
         if entry_mode.is_tree() {
-            // Recurse into subtrees
-            collect_tree_objects(repo, entry_oid, seen, objects)?;
-        } else if !seen.contains(&entry_oid) {
-            // Blob, symlink, or submodule entry -- collect as-is
-            seen.insert(entry_oid);
-            if !entry_mode.is_commit() {
-                // Skip submodule commits, collect blobs and symlinks
-                let obj = repo.find_object(entry_oid)?;
-                objects.push(PackObject {
-                    kind: obj.kind,
-                    data: obj.data.clone(),
-                });
-            }
+            collect_tree_oids(repo, entry_oid, seen, oids)?;
+        } else if seen.insert(entry_oid) && !entry_mode.is_commit() {
+            oids.push(entry_oid);
         }
     }
 
     Ok(())
 }
 
-/// Build the raw packfile bytes (header + objects + checksum).
-fn build_packfile(objects: &[PackObject]) -> Vec<u8> {
-    let mut pack = Vec::new();
+/// Walk commits from `wants` (excluding `haves`) and collect all
+/// reachable ObjectIds (commits, trees, blobs).
+///
+/// Pass 1 of the two-pass streaming approach: only OIDs are stored,
+/// not object data.
+fn collect_all_oids(
+    repo: &gix::Repository,
+    wants: &[gix::ObjectId],
+    haves: &[gix::ObjectId],
+) -> std::result::Result<Vec<gix::ObjectId>, Box<dyn std::error::Error + Send + Sync>> {
+    let have_set: HashSet<gix::ObjectId> = haves.iter().copied().collect();
+    let mut seen = HashSet::new();
+    let mut oids = Vec::new();
 
-    // Pack header: "PACK" + version 2 + object count
-    pack.extend_from_slice(b"PACK");
-    pack.extend_from_slice(&2u32.to_be_bytes()); // version 2
-    pack.extend_from_slice(&(objects.len() as u32).to_be_bytes());
-
-    // Each object: header + zlib-compressed data
-    for obj in objects {
-        let type_num = object_type_number(obj.kind);
-        let header = encode_pack_object_header(type_num, obj.data.len());
-        pack.extend_from_slice(&header);
-
-        // Compress with zlib (deflate)
-        let compressed = miniz_oxide::deflate::compress_to_vec_zlib(&obj.data, 6);
-        pack.extend_from_slice(&compressed);
+    // Mark have objects as already seen so we skip them
+    for have in haves {
+        seen.insert(*have);
     }
 
-    // Footer: SHA-1 checksum of everything
-    let mut hasher = Sha1::new();
-    hasher.update(&pack);
-    let checksum = hasher.finalize();
-    pack.extend_from_slice(&checksum);
+    let walk = repo
+        .rev_walk(wants.iter().copied())
+        .with_hidden(haves.iter().copied())
+        .all()?;
 
-    pack
+    for info_result in walk {
+        let info = info_result?;
+        let commit_oid = info.id;
+
+        if have_set.contains(&commit_oid) || !seen.insert(commit_oid) {
+            continue;
+        }
+
+        // Extract tree OID from raw commit bytes (single ODB read)
+        let commit_obj = repo.find_object(commit_oid)?;
+        let tree_oid = gix::objs::CommitRefIter::from_bytes(&commit_obj.data).tree_id()?;
+
+        oids.push(commit_oid);
+
+        collect_tree_oids(repo, tree_oid, &mut seen, &mut oids)?;
+    }
+
+    Ok(oids)
 }
 
 /// Generate the complete pack response for a Git upload-pack request.
@@ -234,27 +237,22 @@ pub fn generate_pack(
     repo_path: &Path,
     request: &UploadPackRequest,
 ) -> Result<impl AsyncRead + Send + Unpin + use<>> {
-    // We need owned data for the spawn_blocking closure
     let repo_path = repo_path.to_path_buf();
     let wants: Vec<gix::ObjectId> = request.wants.clone();
     let haves: Vec<gix::ObjectId> = request.haves.clone();
 
-    let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<Bytes, std::io::Error>>(16);
+    let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<Bytes, std::io::Error>>(64);
 
-    tokio::task::spawn_blocking(move || {
-        let result = generate_pack_sync(&repo_path, &wants, &haves);
-        match result {
-            Ok(data) => {
-                // Send data in chunks to avoid holding the entire response in memory
-                for chunk in data.chunks(65536) {
-                    if tx.blocking_send(Ok(Bytes::copy_from_slice(chunk))).is_err() {
-                        return;
-                    }
-                }
-            }
-            Err(e) => {
-                let _ = tx.blocking_send(Err(std::io::Error::other(e.to_string())));
-            }
+    let handle = tokio::task::spawn_blocking(move || {
+        if let Err(e) = generate_pack_sync(&repo_path, &wants, &haves, &tx) {
+            let _ = tx.blocking_send(Err(std::io::Error::other(e.to_string())));
+        }
+    });
+
+    // Log panics from the blocking task without blocking the stream
+    tokio::spawn(async move {
+        if let Err(e) = handle.await {
+            tracing::error!("pack generation task panicked: {e}");
         }
     });
 
@@ -262,75 +260,59 @@ pub fn generate_pack(
     Ok(StreamReader::new(stream))
 }
 
-/// Synchronous inner implementation of pack generation.
+/// Synchronous two-pass streaming pack generator.
+///
+/// Pass 1: collect OIDs only (lightweight -- no object data retained).
+/// Pass 2: re-read each object, compress, and stream it through `tx`.
 fn generate_pack_sync(
     repo_path: &Path,
     wants: &[gix::ObjectId],
     haves: &[gix::ObjectId],
-) -> std::result::Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+    tx: &tokio::sync::mpsc::Sender<std::result::Result<Bytes, std::io::Error>>,
+) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let repo = gix::open(repo_path)?;
-    let mut response = Vec::new();
 
-    // Build NAK/ACK line (basic ack mode -- single ACK or NAK)
-    response.extend_from_slice(&pktline::encode(b"NAK\n"));
+    // NAK line
+    send(tx, &pktline::encode(b"NAK\n"))?;
 
-    // Collect objects: walk commits from wants, excluding haves
-    let have_set: HashSet<gix::ObjectId> = haves.iter().copied().collect();
-    let mut seen = HashSet::new();
-    let mut objects = Vec::new();
+    // Pass 1: collect OIDs only
+    let oids = collect_all_oids(&repo, wants, haves)?;
 
-    // Mark have objects as already seen so we don't include them
-    for have in haves {
-        seen.insert(*have);
+    // Pass 2: stream each object
+    let mut hasher = Sha1::new();
+
+    // Pack header
+    let mut header = Vec::with_capacity(12);
+    header.extend_from_slice(b"PACK");
+    header.extend_from_slice(&2u32.to_be_bytes());
+    header.extend_from_slice(&(oids.len() as u32).to_be_bytes());
+    hasher.update(&header);
+    send_sideband(tx, &header)?;
+
+    // Each object: read, compress, frame, send
+    for oid in &oids {
+        let obj = repo.find_object(*oid)?;
+        let type_num = object_type_number(obj.kind);
+        let obj_header = encode_pack_object_header(type_num, obj.data.len());
+        let compressed = miniz_oxide::deflate::compress_to_vec_zlib(&obj.data, 6);
+
+        hasher.update(&obj_header);
+        hasher.update(&compressed);
+
+        let mut obj_bytes = Vec::with_capacity(obj_header.len() + compressed.len());
+        obj_bytes.extend_from_slice(&obj_header);
+        obj_bytes.extend_from_slice(&compressed);
+        send_sideband(tx, &obj_bytes)?;
     }
 
-    // Walk from each want
-    let walk = repo
-        .rev_walk(wants.iter().copied())
-        .with_hidden(haves.iter().copied())
-        .all()?;
+    // SHA-1 checksum over raw pack bytes
+    let checksum = hasher.finalize();
+    send_sideband(tx, &checksum)?;
 
-    for info_result in walk {
-        let info = info_result?;
-        let commit_oid = info.id;
+    // Flush
+    send(tx, b"0000")?;
 
-        if have_set.contains(&commit_oid) {
-            continue;
-        }
-
-        if !seen.insert(commit_oid) {
-            continue;
-        }
-
-        // Get the commit object data
-        let commit_obj = repo.find_object(commit_oid)?;
-        let commit_data = commit_obj.data.clone();
-
-        // Get the tree OID from this commit
-        let commit = repo.find_commit(commit_oid)?;
-        let tree_oid = commit.tree_id()?.detach();
-
-        // Store the commit object
-        objects.push(PackObject {
-            kind: gix::object::Kind::Commit,
-            data: commit_data,
-        });
-
-        // Collect tree and all its children
-        collect_tree_objects(&repo, tree_oid, &mut seen, &mut objects)?;
-    }
-
-    // Build the packfile
-    let packfile = build_packfile(&objects);
-
-    // Wrap in side-band-64k framing
-    let framed = sideband_pack_data(&packfile);
-    response.extend_from_slice(&framed);
-
-    // Send flush to end the side-band stream
-    response.extend_from_slice(b"0000");
-
-    Ok(response)
+    Ok(())
 }
 
 #[cfg(test)]
