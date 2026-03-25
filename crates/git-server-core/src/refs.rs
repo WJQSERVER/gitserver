@@ -3,7 +3,7 @@ use std::path::Path;
 use crate::error::Result;
 use crate::pktline;
 
-const CAPABILITIES: &str = "thin-pack side-band-64k ofs-delta shallow";
+const CAPABILITIES: &str = "side-band-64k";
 
 const ZERO_OID: &str = "0000000000000000000000000000000000000000";
 
@@ -171,8 +171,16 @@ mod tests {
             "output missing side-band-64k: {output_str:?}"
         );
         assert!(
-            output_str.contains("ofs-delta"),
-            "output missing ofs-delta: {output_str:?}"
+            !output_str.contains("thin-pack"),
+            "output should not advertise thin-pack: {output_str:?}"
+        );
+        assert!(
+            !output_str.contains("ofs-delta"),
+            "output should not advertise ofs-delta: {output_str:?}"
+        );
+        assert!(
+            !output_str.contains("shallow"),
+            "output should not advertise shallow: {output_str:?}"
         );
     }
 
