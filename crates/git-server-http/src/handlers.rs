@@ -99,7 +99,10 @@ async fn upload_pack_inner(
     let reader = backend
         .upload_pack(&upload_request)
         .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+        .map_err(|e| {
+            tracing::error!("pack generation failed: {e}");
+            AppError::Internal("internal server error".into())
+        })?;
     let stream = ReaderStream::new(reader);
     Ok(Response::builder()
         .status(StatusCode::OK)

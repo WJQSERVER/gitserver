@@ -46,7 +46,10 @@ impl From<CoreError> for AppError {
             CoreError::PathTraversal(_) | CoreError::Protocol(_) => {
                 Self::BadRequest(err.to_string())
             }
-            _ => Self::Internal(err.to_string()),
+            _ => {
+                tracing::error!("internal error: {err}");
+                Self::Internal("internal server error".into())
+            }
         }
     }
 }

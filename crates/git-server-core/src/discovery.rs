@@ -13,6 +13,7 @@ const DEFAULT_GIT_DESCRIPTION: &str =
 pub struct RepoInfo {
     pub name: String,
     pub relative_path: String,
+    #[serde(skip)]
     pub absolute_path: PathBuf,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
