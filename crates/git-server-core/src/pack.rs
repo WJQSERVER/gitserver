@@ -41,15 +41,10 @@ impl UploadPackRequest {
             if pos + 4 > body.len() {
                 break;
             }
-            let len_str = std::str::from_utf8(&body[pos..pos + 4]).map_err(|_| {
-                Error::InvalidRepo(
-                    std::path::PathBuf::new(),
-                    "invalid pkt-line length prefix".into(),
-                )
-            })?;
-            let len = usize::from_str_radix(len_str, 16).map_err(|_| {
-                Error::InvalidRepo(std::path::PathBuf::new(), "invalid pkt-line length".into())
-            })?;
+            let len_str = std::str::from_utf8(&body[pos..pos + 4])
+                .map_err(|_| Error::Protocol("invalid pkt-line length prefix".into()))?;
+            let len = usize::from_str_radix(len_str, 16)
+                .map_err(|_| Error::Protocol("invalid pkt-line length".into()))?;
 
             if len == 0 {
                 // flush packet already handled above, but just in case
@@ -62,12 +57,8 @@ impl UploadPackRequest {
             }
 
             let payload = &body[pos + 4..pos + len];
-            let line = std::str::from_utf8(payload).map_err(|_| {
-                Error::InvalidRepo(
-                    std::path::PathBuf::new(),
-                    "invalid UTF-8 in pkt-line".into(),
-                )
-            })?;
+            let line = std::str::from_utf8(payload)
+                .map_err(|_| Error::Protocol("invalid UTF-8 in pkt-line".into()))?;
             let line = line.trim_end_matches('\n');
 
             if line == "done" {
@@ -75,21 +66,13 @@ impl UploadPackRequest {
             } else if let Some(rest) = line.strip_prefix("want ") {
                 // The OID is the first 40 hex chars; the rest may be capabilities
                 let oid_hex = &rest[..40.min(rest.len())];
-                let oid = gix::ObjectId::from_hex(oid_hex.as_bytes()).map_err(|_| {
-                    Error::InvalidRepo(
-                        std::path::PathBuf::new(),
-                        format!("invalid OID in want: {oid_hex}"),
-                    )
-                })?;
+                let oid = gix::ObjectId::from_hex(oid_hex.as_bytes())
+                    .map_err(|_| Error::Protocol(format!("invalid OID in want: {oid_hex}")))?;
                 wants.push(oid);
             } else if let Some(rest) = line.strip_prefix("have ") {
                 let oid_hex = &rest[..40.min(rest.len())];
-                let oid = gix::ObjectId::from_hex(oid_hex.as_bytes()).map_err(|_| {
-                    Error::InvalidRepo(
-                        std::path::PathBuf::new(),
-                        format!("invalid OID in have: {oid_hex}"),
-                    )
-                })?;
+                let oid = gix::ObjectId::from_hex(oid_hex.as_bytes())
+                    .map_err(|_| Error::Protocol(format!("invalid OID in have: {oid_hex}")))?;
                 haves.push(oid);
             }
 

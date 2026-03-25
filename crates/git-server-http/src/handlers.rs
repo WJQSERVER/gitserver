@@ -95,8 +95,7 @@ async fn upload_pack_inner(
     }
     let repo_info = store.resolve(repo_path)?;
     let backend = GitBackend::new(repo_info.absolute_path.clone());
-    let upload_request = git_server_core::pack::UploadPackRequest::parse(&request)
-        .map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let upload_request = git_server_core::pack::UploadPackRequest::parse(&request)?;
     let reader = backend
         .upload_pack(&upload_request)
         .await

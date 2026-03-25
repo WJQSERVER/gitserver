@@ -11,6 +11,9 @@ pub enum Error {
     #[error("invalid repository at {0}: {1}")]
     InvalidRepo(PathBuf, String),
 
+    #[error("protocol error: {0}")]
+    Protocol(String),
+
     #[error("git operation failed: {0}")]
     Git(Box<gix::open::Error>),
 

@@ -43,7 +43,9 @@ impl From<CoreError> for AppError {
     fn from(err: CoreError) -> Self {
         match &err {
             CoreError::RepoNotFound(_) => Self::NotFound(err.to_string()),
-            CoreError::PathTraversal(_) => Self::BadRequest(err.to_string()),
+            CoreError::PathTraversal(_) | CoreError::Protocol(_) => {
+                Self::BadRequest(err.to_string())
+            }
             _ => Self::Internal(err.to_string()),
         }
     }
