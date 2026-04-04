@@ -6,6 +6,7 @@ use axum::{
     response::Response,
 };
 use serde::Deserialize;
+use tokio::io::AsyncReadExt;
 use tokio_util::io::ReaderStream;
 
 use git_server_core::{backend::GitBackend, discovery::RepoInfo};
@@ -29,20 +30,30 @@ fn strip_path_suffix<'a>(path: &'a str, suffix: &str) -> Option<&'a str> {
     path.strip_suffix(suffix).map(|s| s.trim_end_matches('/'))
 }
 
+fn is_protocol_v2(headers: &HeaderMap) -> bool {
+    headers
+        .get("git-protocol")
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.split(':').any(|item| item.trim() == "version=2"))
+        .unwrap_or(false)
+}
+
 /// GET /{*path} -- dispatches to info_refs when path ends with /info/refs
 pub async fn info_refs_dispatch(
     State(store): State<SharedState>,
     Path(path): Path<String>,
+    headers: HeaderMap,
     Query(query): Query<InfoRefsQuery>,
 ) -> Result<Response, AppError> {
     let repo_path = strip_path_suffix(&path, "/info/refs")
         .ok_or_else(|| AppError::NotFound(format!("not found: /{path}")))?;
-    info_refs_inner(&store, repo_path, query).await
+    info_refs_inner(&store, repo_path, headers, query).await
 }
 
 async fn info_refs_inner(
     store: &SharedState,
     repo_path: &str,
+    headers: HeaderMap,
     query: InfoRefsQuery,
 ) -> Result<Response, AppError> {
     if query.service != "git-upload-pack" {
@@ -51,9 +62,13 @@ async fn info_refs_inner(
             query.service
         )));
     }
-    let repo_info = store.resolve(repo_path)?;
-    let backend = GitBackend::new(repo_info.absolute_path.clone());
-    let body = backend.advertise_refs()?;
+    let body = if is_protocol_v2(&headers) {
+        git_server_core::protocol_v2::advertise_capabilities()
+    } else {
+        let repo_info = store.resolve(repo_path)?;
+        let backend = GitBackend::new(repo_info.absolute_path.clone());
+        backend.advertise_refs()?
+    };
     Ok(Response::builder()
         .status(StatusCode::OK)
         .header(
@@ -95,6 +110,11 @@ async fn upload_pack_inner(
     }
     let repo_info = store.resolve(repo_path)?;
     let backend = GitBackend::new(repo_info.absolute_path.clone());
+
+    if is_protocol_v2(&headers) {
+        return upload_pack_v2(repo_info.absolute_path.as_path(), &backend, &request).await;
+    }
+
     let upload_request = git_server_core::pack::UploadPackRequest::parse(&request)?;
     let reader = backend.upload_pack(&upload_request).await.map_err(|e| {
         tracing::error!("pack generation failed: {e}");
@@ -107,6 +127,52 @@ async fn upload_pack_inner(
         .header(header::CACHE_CONTROL, "no-cache")
         .body(Body::from_stream(stream))
         .unwrap())
+}
+
+async fn upload_pack_v2(
+    repo_path: &std::path::Path,
+    backend: &GitBackend,
+    request: &[u8],
+) -> Result<Response, AppError> {
+    match git_server_core::protocol_v2::parse_command_request(request)? {
+        git_server_core::protocol_v2::Command::LsRefs(req) => Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, "application/x-git-upload-pack-result")
+            .header(header::CACHE_CONTROL, "no-cache")
+            .body(Body::from(git_server_core::protocol_v2::ls_refs(repo_path, &req)?))
+            .unwrap()),
+        git_server_core::protocol_v2::Command::Fetch(req) => {
+            if !req.upload_request.done {
+                return Ok(Response::builder()
+                    .status(StatusCode::OK)
+                    .header(header::CONTENT_TYPE, "application/x-git-upload-pack-result")
+                    .header(header::CACHE_CONTROL, "no-cache")
+                    .body(Body::from(git_server_core::protocol_v2::encode_fetch_acknowledgments(
+                        &git_server_core::protocol_v2::common_haves(repo_path, &req)?,
+                    )))
+                    .unwrap());
+            }
+
+            let mut reader = backend.upload_pack(&req.upload_request).await.map_err(|e| {
+                tracing::error!("pack generation failed: {e}");
+                AppError::Internal("internal server error".into())
+            })?;
+            let mut pack = Vec::new();
+            reader.read_to_end(&mut pack).await.map_err(|e| {
+                tracing::error!("failed reading generated pack: {e}");
+                AppError::Internal("internal server error".into())
+            })?;
+
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header(header::CONTENT_TYPE, "application/x-git-upload-pack-result")
+                .header(header::CACHE_CONTROL, "no-cache")
+                .body(Body::from(git_server_core::protocol_v2::encode_fetch_pack_response(
+                    &pack,
+                )))
+                .unwrap())
+        }
+    }
 }
 
 #[cfg(test)]

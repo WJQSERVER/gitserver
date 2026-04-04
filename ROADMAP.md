@@ -20,6 +20,7 @@ Native smart HTTP Git server with gitoxide. Read-only clone and fetch.
 
 Reduce memory footprint and improve performance for large repositories.
 
+- [x] Git protocol v2 support (`ls-refs`, `fetch` over smart HTTP)
 - [x] Streaming pack generation (avoid building the entire packfile in memory)
 - [x] Delta compression (OFS_DELTA) to reduce transfer size
 - [ ] Multi-ack negotiation for efficient incremental fetches
@@ -48,7 +49,6 @@ Enable push operations.
 
 ## Future considerations
 
-- Git protocol v2 support
 - Authentication (Basic, Bearer token, mTLS)
 - Repository creation via API
 - Web UI for repository browsing

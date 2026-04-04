@@ -13,6 +13,31 @@ fn make_pktline(data: &str) -> Vec<u8> {
     format!("{len:04x}{data}").into_bytes()
 }
 
+fn decode_pkt_lines(body: &[u8]) -> Vec<String> {
+    let mut pos = 0;
+    let mut lines = Vec::new();
+
+    while pos + 4 <= body.len() {
+        let prefix = std::str::from_utf8(&body[pos..pos + 4]).unwrap();
+        pos += 4;
+        if prefix == "0000" {
+            lines.push("0000".to_string());
+            break;
+        }
+        if prefix == "0001" {
+            lines.push("0001".to_string());
+            continue;
+        }
+
+        let len = usize::from_str_radix(prefix, 16).unwrap();
+        let payload = &body[pos..pos + (len - 4)];
+        pos += len - 4;
+        lines.push(String::from_utf8(payload.to_vec()).unwrap());
+    }
+
+    lines
+}
+
 fn repo_head_oid(repo_path: &Path) -> String {
     let out = Command::new("git")
         .args(["rev-parse", "refs/heads/main"])
@@ -433,6 +458,147 @@ async fn upload_pack_uses_ofs_delta_when_requested() {
         pack_contains_ofs_delta(&pack),
         "expected OFS_DELTA entry when client requests ofs-delta"
     );
+
+    server.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn info_refs_advertises_protocol_v2_capabilities() {
+    let root = TempDir::new().unwrap();
+    create_bare_repo_with_commits(root.path(), "v2.git", 1);
+    let server = TestServer::start(root.path()).await;
+
+    let response = reqwest::Client::new()
+        .get(format!(
+            "{}/info/refs?service=git-upload-pack",
+            server.url("v2.git")
+        ))
+        .header("Git-Protocol", "version=2")
+        .send()
+        .await
+        .expect("GET info/refs v2");
+
+    assert_eq!(response.status(), 200);
+    let body = response.bytes().await.expect("read v2 advertisement");
+    let text = String::from_utf8_lossy(&body);
+    assert!(text.contains("version 2\n"));
+    assert!(text.contains("ls-refs=unborn\n"));
+    assert!(text.contains("fetch=shallow wait-for-done\n"));
+
+    server.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn upload_pack_v2_ls_refs_returns_matching_refs() {
+    let root = TempDir::new().unwrap();
+    create_bare_repo_with_commits(root.path(), "v2.git", 1);
+    let server = TestServer::start(root.path()).await;
+
+    let mut body = Vec::new();
+    body.extend_from_slice(&make_pktline("command=ls-refs\n"));
+    body.extend_from_slice(&make_pktline("object-format=sha1\n"));
+    body.extend_from_slice(b"0001");
+    body.extend_from_slice(&make_pktline("peel\n"));
+    body.extend_from_slice(&make_pktline("symrefs\n"));
+    body.extend_from_slice(&make_pktline("ref-prefix refs/heads/\n"));
+    body.extend_from_slice(b"0000");
+
+    let response = reqwest::Client::new()
+        .post(server.url("v2.git/git-upload-pack"))
+        .header("Git-Protocol", "version=2")
+        .header("content-type", "application/x-git-upload-pack-request")
+        .body(body)
+        .send()
+        .await
+        .expect("POST ls-refs v2");
+
+    assert_eq!(response.status(), 200);
+    let body = response.bytes().await.expect("read ls-refs response");
+    let lines = decode_pkt_lines(&body);
+    assert!(
+        lines.iter().any(|line| line.contains("refs/heads/main")),
+        "expected refs/heads/main in ls-refs response"
+    );
+
+    server.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn git_fetch_works_over_protocol_v2() {
+    let root = TempDir::new().unwrap();
+    create_bare_repo_with_commits(root.path(), "v2.git", 2);
+    let server = TestServer::start(root.path()).await;
+
+    let repo_dir = TempDir::new().unwrap();
+    let repo_path = repo_dir.path();
+
+    let init = Command::new("git")
+        .args(["init", repo_path.to_str().unwrap()])
+        .output()
+        .expect("git init");
+    assert!(init.status.success(), "git init failed: {:?}", init);
+
+    let remote = Command::new("git")
+        .args(["remote", "add", "origin", &server.url("v2.git")])
+        .current_dir(repo_path)
+        .output()
+        .expect("git remote add");
+    assert!(remote.status.success(), "git remote add failed: {:?}", remote);
+
+    let fetch = tokio::task::spawn_blocking({
+        let repo_path = repo_path.to_path_buf();
+        let url = server.url("v2.git");
+        move || {
+            Command::new("git")
+                .args(["-c", "protocol.version=2", "fetch", &url, "main"])
+                .current_dir(&repo_path)
+                .output()
+                .expect("git fetch protocol v2")
+        }
+    })
+    .await
+    .unwrap();
+
+    assert!(
+        fetch.status.success(),
+        "git fetch v2 failed: stdout={}, stderr={}",
+        String::from_utf8_lossy(&fetch.stdout),
+        String::from_utf8_lossy(&fetch.stderr),
+    );
+
+    server.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn upload_pack_v2_fetch_negotiation_returns_acknowledgments() {
+    let root = TempDir::new().unwrap();
+    let bare_path = create_bare_repo_with_commits(root.path(), "v2.git", 2);
+    let head_oid = repo_head_oid(&bare_path);
+    let server = TestServer::start(root.path()).await;
+
+    let mut body = Vec::new();
+    body.extend_from_slice(&make_pktline("command=fetch\n"));
+    body.extend_from_slice(&make_pktline("object-format=sha1\n"));
+    body.extend_from_slice(b"0001");
+    body.extend_from_slice(&make_pktline("ofs-delta\n"));
+    body.extend_from_slice(&make_pktline(&format!("want {head_oid}\n")));
+    body.extend_from_slice(&make_pktline(&format!("have {head_oid}\n")));
+    body.extend_from_slice(b"0000");
+
+    let response = reqwest::Client::new()
+        .post(server.url("v2.git/git-upload-pack"))
+        .header("Git-Protocol", "version=2")
+        .header("content-type", "application/x-git-upload-pack-request")
+        .body(body)
+        .send()
+        .await
+        .expect("POST fetch negotiation v2");
+
+    assert_eq!(response.status(), 200);
+    let body = response.bytes().await.expect("read fetch negotiation response");
+    let text = String::from_utf8_lossy(&body);
+    assert!(text.contains("acknowledgments\n"));
+    assert!(text.contains(&format!("ACK {head_oid}\n")));
 
     server.stop().await;
 }
