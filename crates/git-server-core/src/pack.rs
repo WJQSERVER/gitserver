@@ -14,12 +14,20 @@ pub struct UploadPackCapabilities {
     pub ofs_delta: bool,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct ShallowRequest {
+    pub depth: Option<usize>,
+    pub client_shallows: Vec<gix::ObjectId>,
+    pub deepen_relative: bool,
+}
+
 /// A parsed upload-pack request from a Git client.
 pub struct UploadPackRequest {
     pub wants: Vec<gix::ObjectId>,
     pub haves: Vec<gix::ObjectId>,
     pub done: bool,
     pub capabilities: UploadPackCapabilities,
+    pub shallow: ShallowRequest,
 }
 
 impl UploadPackRequest {
@@ -35,6 +43,7 @@ impl UploadPackRequest {
         let mut haves = Vec::new();
         let mut done = false;
         let mut capabilities = UploadPackCapabilities::default();
+        let mut shallow = ShallowRequest::default();
         let mut pos = 0;
 
         while pos < body.len() {
@@ -70,6 +79,17 @@ impl UploadPackRequest {
 
             if line == "done" {
                 done = true;
+            } else if let Some(rest) = line.strip_prefix("deepen ") {
+                let depth = rest
+                    .parse::<usize>()
+                    .map_err(|_| Error::Protocol(format!("invalid deepen value: {rest}")))?;
+                shallow.depth = Some(depth);
+            } else if line == "deepen-relative" {
+                shallow.deepen_relative = true;
+            } else if let Some(rest) = line.strip_prefix("shallow ") {
+                let oid = gix::ObjectId::from_hex(rest.as_bytes())
+                    .map_err(|_| Error::Protocol(format!("invalid OID in shallow: {rest}")))?;
+                shallow.client_shallows.push(oid);
             } else if let Some(rest) = line.strip_prefix("want ") {
                 let mut parts = rest.split_ascii_whitespace();
                 let oid_hex = parts
@@ -103,6 +123,7 @@ impl UploadPackRequest {
             haves,
             done,
             capabilities,
+            shallow,
         })
     }
 }
@@ -626,6 +647,7 @@ mod tests {
         assert!(req.haves.is_empty());
         assert!(req.done);
         assert!(!req.capabilities.ofs_delta);
+        assert_eq!(req.shallow.depth, None);
     }
 
     #[test]
@@ -641,6 +663,7 @@ mod tests {
         assert_eq!(req.haves.len(), 1);
         assert!(req.done);
         assert!(!req.capabilities.ofs_delta);
+        assert!(req.shallow.client_shallows.is_empty());
     }
 
     #[test]
@@ -650,6 +673,20 @@ mod tests {
         body.extend_from_slice(b"0009done\n");
         let req = UploadPackRequest::parse(&body).unwrap();
         assert!(req.capabilities.ofs_delta);
+    }
+
+    #[test]
+    fn parse_shallow_request() {
+        let hash = "0000000000000000000000000000000000000001";
+        let mut body = make_pktline(&format!("want {hash}\n"));
+        body.extend_from_slice(&make_pktline("deepen 2\n"));
+        body.extend_from_slice(&make_pktline(&format!("shallow {hash}\n")));
+        body.extend_from_slice(&make_pktline("deepen-relative\n"));
+        body.extend_from_slice(b"0009done\n");
+        let req = UploadPackRequest::parse(&body).unwrap();
+        assert_eq!(req.shallow.depth, Some(2));
+        assert_eq!(req.shallow.client_shallows, vec![gix::ObjectId::from_hex(hash.as_bytes()).unwrap()]);
+        assert!(req.shallow.deepen_relative);
     }
 
     #[tokio::test]
@@ -667,6 +704,7 @@ mod tests {
             haves: vec![],
             done: true,
             capabilities: UploadPackCapabilities::default(),
+            shallow: ShallowRequest::default(),
         };
 
         let mut reader = generate_pack(&repo_path, &request).unwrap();

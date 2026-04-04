@@ -141,15 +141,20 @@ async fn upload_pack_v2(
             .header(header::CACHE_CONTROL, "no-cache")
             .body(Body::from(git_server_core::protocol_v2::ls_refs(repo_path, &req)?))
             .unwrap()),
-        git_server_core::protocol_v2::Command::Fetch(req) => {
-            if !req.upload_request.done {
+        git_server_core::protocol_v2::Command::Fetch(mut req) => {
+            let shallow_update = git_server_core::protocol_v2::apply_shallow_boundaries(repo_path, &mut req)?;
+            let is_shallow_negotiation = req.upload_request.shallow.depth.is_some();
+
+            if !req.upload_request.done && !is_shallow_negotiation {
+                let common = git_server_core::protocol_v2::common_haves(repo_path, &req)?;
+                let mut body = git_server_core::protocol_v2::encode_fetch_acknowledgments(&common);
+                body.extend_from_slice(&git_server_core::protocol_v2::encode_shallow_info(&shallow_update));
+
                 return Ok(Response::builder()
                     .status(StatusCode::OK)
                     .header(header::CONTENT_TYPE, "application/x-git-upload-pack-result")
                     .header(header::CACHE_CONTROL, "no-cache")
-                    .body(Body::from(git_server_core::protocol_v2::encode_fetch_acknowledgments(
-                        &git_server_core::protocol_v2::common_haves(repo_path, &req)?,
-                    )))
+                    .body(Body::from(body))
                     .unwrap());
             }
 
@@ -163,13 +168,21 @@ async fn upload_pack_v2(
                 AppError::Internal("internal server error".into())
             })?;
 
+            let mut body = if is_shallow_negotiation && !req.upload_request.haves.is_empty() && !req.upload_request.done {
+                git_server_core::protocol_v2::encode_fetch_ready_and_acknowledgments(
+                    &git_server_core::protocol_v2::common_haves(repo_path, &req)?,
+                )
+            } else {
+                Vec::new()
+            };
+            body.extend_from_slice(&git_server_core::protocol_v2::encode_shallow_info(&shallow_update));
+            body.extend_from_slice(&git_server_core::protocol_v2::encode_fetch_pack_response(&pack));
+
             Ok(Response::builder()
                 .status(StatusCode::OK)
                 .header(header::CONTENT_TYPE, "application/x-git-upload-pack-result")
                 .header(header::CACHE_CONTROL, "no-cache")
-                .body(Body::from(git_server_core::protocol_v2::encode_fetch_pack_response(
-                    &pack,
-                )))
+                .body(Body::from(body))
                 .unwrap())
         }
     }

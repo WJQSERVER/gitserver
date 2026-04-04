@@ -24,7 +24,7 @@ Reduce memory footprint and improve performance for large repositories.
 - [x] Streaming pack generation (avoid building the entire packfile in memory)
 - [x] Delta compression (OFS_DELTA) to reduce transfer size
 - [ ] Multi-ack negotiation for efficient incremental fetches
-- [ ] Shallow clone support
+- [x] Shallow clone support
 - [ ] Response compression (gzip/zstd on ref advertisement)
 
 ## v0.3 -- Production readiness

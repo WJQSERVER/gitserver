@@ -648,6 +648,117 @@ async fn git_clone_works_over_protocol_v2() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn git_shallow_clone_works_over_protocol_v2() {
+    let root = TempDir::new().unwrap();
+    create_bare_repo_with_commits(root.path(), "v2.git", 4);
+    let server = TestServer::start(root.path()).await;
+
+    let clone_dir = TempDir::new().unwrap();
+    let clone_path = clone_dir.path().join("shallow-v2");
+
+    let output = tokio::task::spawn_blocking({
+        let url = server.url("v2.git");
+        let clone_path = clone_path.clone();
+        move || {
+            Command::new("git")
+                .args([
+                    "-c",
+                    "protocol.version=2",
+                    "clone",
+                    "--depth=1",
+                    &url,
+                    clone_path.to_str().unwrap(),
+                ])
+                .output()
+                .expect("git shallow clone protocol v2")
+        }
+    })
+    .await
+    .unwrap();
+
+    assert!(
+        output.status.success(),
+        "git shallow clone v2 failed: stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+
+    let log = Command::new("git")
+        .args(["log", "--oneline"])
+        .current_dir(&clone_path)
+        .output()
+        .expect("git log after shallow clone");
+    assert!(log.status.success(), "git log failed after shallow clone");
+    assert_eq!(String::from_utf8_lossy(&log.stdout).trim().lines().count(), 1);
+
+    let shallow = std::fs::read_to_string(clone_path.join(".git/shallow")).expect("read shallow file");
+    assert_eq!(shallow.trim().lines().count(), 1, "expected one shallow boundary");
+
+    server.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn git_fetch_deepen_works_over_protocol_v2() {
+    let root = TempDir::new().unwrap();
+    create_bare_repo_with_commits(root.path(), "v2.git", 4);
+    let server = TestServer::start(root.path()).await;
+
+    let clone_dir = TempDir::new().unwrap();
+    let clone_path = clone_dir.path().join("shallow-v2");
+
+    let clone = tokio::task::spawn_blocking({
+        let url = server.url("v2.git");
+        let clone_path = clone_path.clone();
+        move || {
+            Command::new("git")
+                .args([
+                    "-c",
+                    "protocol.version=2",
+                    "clone",
+                    "--depth=1",
+                    &url,
+                    clone_path.to_str().unwrap(),
+                ])
+                .output()
+                .expect("git shallow clone for deepen")
+        }
+    })
+    .await
+    .unwrap();
+    assert!(clone.status.success(), "initial shallow clone failed: {:?}", clone);
+
+    let deepen = tokio::task::spawn_blocking({
+        let clone_path = clone_path.clone();
+        move || {
+            Command::new("git")
+                .args(["-c", "protocol.version=2", "fetch", "--deepen=1", "origin", "main"])
+                .current_dir(&clone_path)
+                .output()
+                .expect("git fetch deepen protocol v2")
+        }
+    })
+    .await
+    .unwrap();
+
+    assert!(
+        deepen.status.success(),
+        "git fetch deepen v2 failed: stdout={}, stderr={}",
+        String::from_utf8_lossy(&deepen.stdout),
+        String::from_utf8_lossy(&deepen.stderr),
+    );
+
+    let log = Command::new("git")
+        .args(["log", "--oneline"])
+        .current_dir(&clone_path)
+        .output()
+        .expect("git log after deepen");
+    assert!(log.status.success(), "git log failed after deepen");
+    assert_eq!(String::from_utf8_lossy(&log.stdout).trim().lines().count(), 2);
+
+    server.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn upload_pack_v2_fetch_negotiation_returns_acknowledgments() {
     let root = TempDir::new().unwrap();
     let bare_path = create_bare_repo_with_commits(root.path(), "v2.git", 2);
@@ -677,6 +788,46 @@ async fn upload_pack_v2_fetch_negotiation_returns_acknowledgments() {
     let text = String::from_utf8_lossy(&body);
     assert!(text.contains("acknowledgments\n"));
     assert!(text.contains(&format!("ACK {head_oid}\n")));
+
+    server.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn upload_pack_v2_deepen_fetch_returns_sections_and_packfile() {
+    let root = TempDir::new().unwrap();
+    let bare_path = create_bare_repo_with_commits(root.path(), "v2.git", 3);
+    let head_oid = repo_head_oid(&bare_path);
+    let server = TestServer::start(root.path()).await;
+
+    let mut body = Vec::new();
+    body.extend_from_slice(&make_pktline("command=fetch\n"));
+    body.extend_from_slice(&make_pktline("object-format=sha1\n"));
+    body.extend_from_slice(b"0001");
+    body.extend_from_slice(&make_pktline("ofs-delta\n"));
+    body.extend_from_slice(&make_pktline(&format!("shallow {head_oid}\n")));
+    body.extend_from_slice(&make_pktline("deepen 1\n"));
+    body.extend_from_slice(&make_pktline("deepen-relative\n"));
+    body.extend_from_slice(&make_pktline(&format!("want {head_oid}\n")));
+    body.extend_from_slice(&make_pktline(&format!("have {head_oid}\n")));
+    body.extend_from_slice(b"0000");
+
+    let response = reqwest::Client::new()
+        .post(server.url("v2.git/git-upload-pack"))
+        .header("Git-Protocol", "version=2")
+        .header("content-type", "application/x-git-upload-pack-request")
+        .body(body)
+        .send()
+        .await
+        .expect("POST deepen fetch v2");
+
+    assert_eq!(response.status(), 200);
+    let body = response.bytes().await.expect("read deepen fetch response");
+    let text = String::from_utf8_lossy(&body);
+    assert!(text.contains("acknowledgments\n"));
+    assert!(text.contains("ready\n"));
+    assert!(text.contains("shallow-info\n"));
+    assert!(text.contains("unshallow "));
+    assert!(text.contains("packfile\n"));
 
     server.stop().await;
 }

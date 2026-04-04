@@ -90,6 +90,7 @@ mod tests {
             haves: vec![],
             done: true,
             capabilities: Default::default(),
+            shallow: Default::default(),
         };
         let reader = backend.upload_pack(&request).await.unwrap();
         let mut buf = Vec::new();

@@ -29,6 +29,11 @@ pub struct FetchRequest {
     pub upload_request: UploadPackRequest,
 }
 
+pub struct ShallowUpdate {
+    pub shallow: Vec<gix::ObjectId>,
+    pub unshallow: Vec<gix::ObjectId>,
+}
+
 pub fn advertise_capabilities() -> Vec<u8> {
     let mut out = Vec::new();
     out.extend_from_slice(&pktline::encode_comment("service=git-upload-pack"));
@@ -164,6 +169,16 @@ pub fn encode_fetch_pack_response(pack_bytes: &[u8]) -> Vec<u8> {
     out
 }
 
+pub fn encode_fetch_ready_and_acknowledgments(common: &[gix::ObjectId]) -> Vec<u8> {
+    let mut out = encode_fetch_acknowledgments(common);
+    if !common.is_empty() {
+        out.truncate(out.len() - 4);
+        out.extend_from_slice(&pktline::encode(b"ready\n"));
+        out.extend_from_slice(b"0001");
+    }
+    out
+}
+
 pub fn encode_fetch_acknowledgments(common: &[gix::ObjectId]) -> Vec<u8> {
     let mut out = Vec::new();
     out.extend_from_slice(&pktline::encode(b"acknowledgments\n"));
@@ -180,6 +195,23 @@ pub fn encode_fetch_acknowledgments(common: &[gix::ObjectId]) -> Vec<u8> {
     out
 }
 
+pub fn encode_shallow_info(update: &ShallowUpdate) -> Vec<u8> {
+    let mut out = Vec::new();
+    if update.shallow.is_empty() && update.unshallow.is_empty() {
+        return out;
+    }
+
+    out.extend_from_slice(&pktline::encode(b"shallow-info\n"));
+    for oid in &update.shallow {
+        out.extend_from_slice(&pktline::encode(format!("shallow {oid}\n").as_bytes()));
+    }
+    for oid in &update.unshallow {
+        out.extend_from_slice(&pktline::encode(format!("unshallow {oid}\n").as_bytes()));
+    }
+    out.extend_from_slice(b"0001");
+    out
+}
+
 pub fn common_haves(repo_path: &Path, request: &FetchRequest) -> Result<Vec<gix::ObjectId>> {
     let repo = gix::open(repo_path)?;
     let want_set: HashSet<gix::ObjectId> = collect_want_closure(&repo, &request.upload_request.wants)?
@@ -193,6 +225,43 @@ pub fn common_haves(repo_path: &Path, request: &FetchRequest) -> Result<Vec<gix:
         .copied()
         .filter(|oid| want_set.contains(oid))
         .collect())
+}
+
+pub fn apply_shallow_boundaries(repo_path: &Path, request: &mut FetchRequest) -> Result<ShallowUpdate> {
+    let Some(depth) = request.upload_request.shallow.depth else {
+        return Ok(ShallowUpdate {
+            shallow: Vec::new(),
+            unshallow: Vec::new(),
+        });
+    };
+
+    let repo = gix::open(repo_path)?;
+    let previous_shallows = request.upload_request.shallow.client_shallows.clone();
+    let state = collect_depth_limited_commits(&repo, &request.upload_request, depth)?;
+
+    request.upload_request.wants = state.included_commits.clone();
+    request.upload_request.haves.extend(previous_shallows.iter().copied());
+
+    let next_shallows: HashSet<_> = state.shallow_boundary.iter().copied().collect();
+    let prev_shallows: HashSet<_> = previous_shallows.iter().copied().collect();
+
+    Ok(ShallowUpdate {
+        shallow: state
+            .shallow_boundary
+            .iter()
+            .copied()
+            .filter(|oid| !prev_shallows.contains(oid))
+            .collect(),
+        unshallow: previous_shallows
+            .into_iter()
+            .filter(|oid| !next_shallows.contains(oid))
+            .collect(),
+    })
+}
+
+struct DepthState {
+    included_commits: Vec<gix::ObjectId>,
+    shallow_boundary: Vec<gix::ObjectId>,
 }
 
 fn parse_ls_refs(args: Vec<String>) -> Result<Command> {
@@ -221,18 +290,31 @@ fn parse_fetch(args: Vec<String>) -> Result<Command> {
     let mut haves = Vec::new();
     let mut done = false;
     let mut capabilities = crate::pack::UploadPackCapabilities::default();
+    let mut shallow = crate::pack::ShallowRequest::default();
 
     for arg in args {
         if arg == "done" {
             done = true;
         } else if arg == "ofs-delta" {
             capabilities.ofs_delta = true;
+        } else if arg == "deepen-relative" {
+            shallow.deepen_relative = true;
         } else if arg == "thin-pack"
             || arg == "no-progress"
             || arg == "include-tag"
             || arg == "wait-for-done"
         {
             continue;
+        } else if let Some(depth) = arg.strip_prefix("deepen ") {
+            shallow.depth = Some(
+                depth
+                    .parse::<usize>()
+                    .map_err(|_| Error::Protocol(format!("invalid deepen value: {depth}")))?,
+            );
+        } else if let Some(oid_hex) = arg.strip_prefix("shallow ") {
+            let oid = gix::ObjectId::from_hex(oid_hex.as_bytes())
+                .map_err(|_| Error::Protocol(format!("invalid OID in shallow: {oid_hex}")))?;
+            shallow.client_shallows.push(oid);
         } else if let Some(oid_hex) = arg.strip_prefix("want ") {
             let oid = gix::ObjectId::from_hex(oid_hex.as_bytes())
                 .map_err(|_| Error::Protocol(format!("invalid OID in want: {oid_hex}")))?;
@@ -252,6 +334,7 @@ fn parse_fetch(args: Vec<String>) -> Result<Command> {
             haves,
             done,
             capabilities,
+            shallow,
         },
     }))
 }
@@ -314,6 +397,58 @@ fn collect_want_closure(
     }
 
     Ok(out)
+}
+
+fn collect_depth_limited_commits(
+    repo: &gix::Repository,
+    request: &crate::pack::UploadPackRequest,
+    depth: usize,
+) -> Result<DepthState> {
+    use std::collections::{HashSet, VecDeque};
+
+    let mut queue = VecDeque::new();
+    let mut seen = HashSet::new();
+    let mut included = Vec::new();
+    let mut shallow_boundary = Vec::new();
+
+    let base_depth = if request.shallow.deepen_relative {
+        request.shallow.client_shallows.len().max(1)
+    } else {
+        0
+    };
+    let limit = base_depth + depth;
+
+    for want in &request.wants {
+        queue.push_back((*want, 1usize));
+    }
+
+    while let Some((commit_oid, current_depth)) = queue.pop_front() {
+        if !seen.insert(commit_oid) {
+            continue;
+        }
+        included.push(commit_oid);
+
+        let commit_obj = repo
+            .find_object(commit_oid)
+            .map_err(|e| Error::Protocol(e.to_string()))?;
+        let parents: Vec<_> = gix::objs::CommitRefIter::from_bytes(&commit_obj.data)
+            .parent_ids()
+            .collect();
+
+        if current_depth >= limit || parents.is_empty() {
+            shallow_boundary.push(commit_oid);
+            continue;
+        }
+
+        for parent in parents {
+            queue.push_back((parent, current_depth + 1));
+        }
+    }
+
+    Ok(DepthState {
+        included_commits: included,
+        shallow_boundary,
+    })
 }
 
 #[cfg(test)]
