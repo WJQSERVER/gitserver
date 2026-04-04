@@ -317,6 +317,135 @@ async fn fetch_new_commits() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn upload_pack_v1_multi_ack_returns_continue_for_common_have() {
+    let root = TempDir::new().unwrap();
+    let bare_path = create_bare_repo_with_commits(root.path(), "multi.git", 2);
+    let head_oid = repo_head_oid(&bare_path);
+    let server = TestServer::start(root.path()).await;
+
+    let mut request_body = make_pktline(&format!("want {head_oid} multi_ack_detailed side-band-64k ofs-delta\n"));
+    request_body.extend_from_slice(b"0000");
+    request_body.extend_from_slice(&make_pktline(&format!("have {head_oid}\n")));
+    request_body.extend_from_slice(b"0000");
+
+    let response = reqwest::Client::new()
+        .post(server.url("multi.git/git-upload-pack"))
+        .header("content-type", "application/x-git-upload-pack-request")
+        .body(request_body)
+        .send()
+        .await
+        .expect("POST git-upload-pack multi_ack");
+
+    assert_eq!(response.status(), 200);
+    let body = response.bytes().await.expect("read multi_ack response");
+    let text = String::from_utf8_lossy(&body);
+    assert!(text.contains(&format!("ACK {head_oid} common\n")));
+    assert!(text.contains("NAK\n"));
+    assert!(!text.contains("PACK"), "negotiation round should not send pack yet");
+
+    server.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn git_fetch_works_over_protocol_v1_with_multi_ack() {
+    let root = TempDir::new().unwrap();
+    create_bare_repo_with_commits(root.path(), "multi.git", 1);
+
+    let server = TestServer::start(root.path()).await;
+    let clone_dir = TempDir::new().unwrap();
+    let clone_path = clone_dir.path().join("cloned-v1");
+
+    let clone = tokio::task::spawn_blocking({
+        let url = server.url("multi.git");
+        let clone_path = clone_path.clone();
+        move || {
+            Command::new("git")
+                .args(["-c", "protocol.version=1", "clone", &url, clone_path.to_str().unwrap()])
+                .output()
+                .expect("git clone protocol v1")
+        }
+    })
+    .await
+    .unwrap();
+    assert!(
+        clone.status.success(),
+        "git clone v1 failed: stdout={}, stderr={}",
+        String::from_utf8_lossy(&clone.stdout),
+        String::from_utf8_lossy(&clone.stderr),
+    );
+
+    let bare_path = root.path().join("multi.git");
+    let push_dir = TempDir::new().unwrap();
+    let push_path = push_dir.path().join("pusher-v1");
+    let out = Command::new("git")
+        .args([
+            "clone",
+            bare_path.to_str().unwrap(),
+            push_path.to_str().unwrap(),
+        ])
+        .output()
+        .expect("git clone for v1 push");
+    assert!(out.status.success(), "git clone failed: {:?}", out);
+
+    for (key, val) in [("user.name", "Test User"), ("user.email", "test@test.com")] {
+        let out = Command::new("git")
+            .args(["config", key, val])
+            .current_dir(&push_path)
+            .output()
+            .expect("git config");
+        assert!(out.status.success(), "git config failed: {:?}", out);
+    }
+
+    std::fs::write(push_path.join("v1-extra.txt"), "extra content\n").unwrap();
+    let out = Command::new("git")
+        .args(["add", "v1-extra.txt"])
+        .current_dir(&push_path)
+        .output()
+        .expect("git add");
+    assert!(out.status.success(), "git add failed: {:?}", out);
+
+    let out = Command::new("git")
+        .args(["commit", "-m", "second commit v1"])
+        .current_dir(&push_path)
+        .env("GIT_AUTHOR_NAME", "Test User")
+        .env("GIT_AUTHOR_EMAIL", "test@test.com")
+        .env("GIT_COMMITTER_NAME", "Test User")
+        .env("GIT_COMMITTER_EMAIL", "test@test.com")
+        .output()
+        .expect("git commit");
+    assert!(out.status.success(), "git commit failed: {:?}", out);
+
+    let out = Command::new("git")
+        .args(["push", "origin", "main"])
+        .current_dir(&push_path)
+        .output()
+        .expect("git push");
+    assert!(out.status.success(), "git push failed: {:?}", out);
+
+    let fetch = tokio::task::spawn_blocking({
+        let clone_path = clone_path.clone();
+        move || {
+            Command::new("git")
+                .args(["-c", "protocol.version=1", "fetch", "origin", "main"])
+                .current_dir(&clone_path)
+                .output()
+                .expect("git fetch protocol v1")
+        }
+    })
+    .await
+    .unwrap();
+
+    assert!(
+        fetch.status.success(),
+        "git fetch v1 failed: stdout={}, stderr={}",
+        String::from_utf8_lossy(&fetch.stdout),
+        String::from_utf8_lossy(&fetch.stderr),
+    );
+
+    server.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn upload_pack_streams_large_responses() {
     let root = TempDir::new().unwrap();
     let bare_path = create_bare_repo_with_commits(root.path(), "stream.git", 1);

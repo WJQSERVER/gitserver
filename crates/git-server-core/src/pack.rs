@@ -12,6 +12,8 @@ use crate::pktline;
 #[derive(Debug, Clone, Default)]
 pub struct UploadPackCapabilities {
     pub ofs_delta: bool,
+    pub multi_ack: bool,
+    pub multi_ack_detailed: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -101,6 +103,11 @@ impl UploadPackRequest {
                     for capability in parts {
                         if capability == "ofs-delta" {
                             capabilities.ofs_delta = true;
+                        } else if capability == "multi_ack" {
+                            capabilities.multi_ack = true;
+                        } else if capability == "multi_ack_detailed" {
+                            capabilities.multi_ack = true;
+                            capabilities.multi_ack_detailed = true;
                         }
                     }
                 }
@@ -362,6 +369,16 @@ fn send_sideband(
     Ok(())
 }
 
+fn encode_ack_line(oid: gix::ObjectId, suffix: Option<&str>) -> Vec<u8> {
+    let mut line = format!("ACK {oid}");
+    if let Some(suffix) = suffix {
+        line.push(' ');
+        line.push_str(suffix);
+    }
+    line.push('\n');
+    pktline::encode(line.as_bytes())
+}
+
 /// Recursively collect tree and blob OIDs reachable from `tree_oid`.
 ///
 /// Uses a single `find_object` call per object and parses raw tree
@@ -439,6 +456,22 @@ fn collect_all_oids(
     Ok(oids)
 }
 
+fn common_haves(
+    repo: &gix::Repository,
+    wants: &[gix::ObjectId],
+    haves: &[gix::ObjectId],
+) -> std::result::Result<Vec<gix::ObjectId>, Box<dyn std::error::Error + Send + Sync>> {
+    let want_set: HashSet<gix::ObjectId> = collect_all_oids(repo, wants, &[])?
+        .into_iter()
+        .collect();
+
+    Ok(haves
+        .iter()
+        .copied()
+        .filter(|oid| want_set.contains(oid))
+        .collect())
+}
+
 /// Generate the complete pack response for a Git upload-pack request.
 ///
 /// Returns an `AsyncRead` producing the side-band-64k framed response that
@@ -450,12 +483,15 @@ pub fn generate_pack(
     let repo_path = repo_path.to_path_buf();
     let wants: Vec<gix::ObjectId> = request.wants.clone();
     let haves: Vec<gix::ObjectId> = request.haves.clone();
+    let done = request.done;
     let ofs_delta = request.capabilities.ofs_delta;
+    let multi_ack = request.capabilities.multi_ack;
+    let multi_ack_detailed = request.capabilities.multi_ack_detailed;
 
     let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<Bytes, std::io::Error>>(64);
 
     let handle = tokio::task::spawn_blocking(move || {
-        if let Err(e) = generate_pack_sync(&repo_path, &wants, &haves, ofs_delta, &tx) {
+        if let Err(e) = generate_pack_sync(&repo_path, &wants, &haves, done, ofs_delta, multi_ack, multi_ack_detailed, &tx) {
             let _ = tx.blocking_send(Err(std::io::Error::other(e.to_string())));
         }
     });
@@ -479,7 +515,10 @@ fn generate_pack_sync(
     repo_path: &Path,
     wants: &[gix::ObjectId],
     haves: &[gix::ObjectId],
+    done: bool,
     ofs_delta: bool,
+    multi_ack: bool,
+    multi_ack_detailed: bool,
     tx: &tokio::sync::mpsc::Sender<std::result::Result<Bytes, std::io::Error>>,
 ) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
     const MAX_DELTA_BASES: usize = 8;
@@ -487,8 +526,27 @@ fn generate_pack_sync(
 
     let repo = gix::open(repo_path)?;
 
-    // NAK line
-    send(tx, &pktline::encode(b"NAK\n"))?;
+    let common = if !haves.is_empty() {
+        common_haves(&repo, wants, haves)?
+    } else {
+        Vec::new()
+    };
+
+    if multi_ack && !haves.is_empty() && !done {
+        for oid in &common {
+            let suffix = if multi_ack_detailed { "common" } else { "continue" };
+            send(tx, &encode_ack_line(*oid, Some(suffix)))?;
+        }
+        send(tx, &pktline::encode(b"NAK\n"))?;
+        return Ok(());
+    }
+
+    if multi_ack && !common.is_empty() {
+        send(tx, &encode_ack_line(*common.last().unwrap(), None))?;
+    } else {
+        // NAK line
+        send(tx, &pktline::encode(b"NAK\n"))?;
+    }
 
     // Pass 1: collect OIDs only
     let oids = collect_all_oids(&repo, wants, haves)?;
@@ -673,6 +731,25 @@ mod tests {
         body.extend_from_slice(b"0009done\n");
         let req = UploadPackRequest::parse(&body).unwrap();
         assert!(req.capabilities.ofs_delta);
+    }
+
+    #[test]
+    fn parse_multi_ack_capability() {
+        let hash = "0000000000000000000000000000000000000001";
+        let mut body = make_pktline(&format!("want {hash} multi_ack side-band-64k\n"));
+        body.extend_from_slice(b"0009done\n");
+        let req = UploadPackRequest::parse(&body).unwrap();
+        assert!(req.capabilities.multi_ack);
+    }
+
+    #[test]
+    fn parse_multi_ack_detailed_capability() {
+        let hash = "0000000000000000000000000000000000000001";
+        let mut body = make_pktline(&format!("want {hash} multi_ack_detailed side-band-64k\n"));
+        body.extend_from_slice(b"0009done\n");
+        let req = UploadPackRequest::parse(&body).unwrap();
+        assert!(req.capabilities.multi_ack);
+        assert!(req.capabilities.multi_ack_detailed);
     }
 
     #[test]

@@ -23,7 +23,7 @@ Reduce memory footprint and improve performance for large repositories.
 - [x] Git protocol v2 support (`ls-refs`, `fetch` over smart HTTP)
 - [x] Streaming pack generation (avoid building the entire packfile in memory)
 - [x] Delta compression (OFS_DELTA) to reduce transfer size
-- [ ] Multi-ack negotiation for efficient incremental fetches
+- [x] Multi-ack negotiation for efficient incremental fetches
 - [x] Shallow clone support
 - [x] Response compression (gzip/zstd on ref advertisement)
 
