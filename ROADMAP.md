@@ -25,7 +25,7 @@ Reduce memory footprint and improve performance for large repositories.
 - [x] Delta compression (OFS_DELTA) to reduce transfer size
 - [ ] Multi-ack negotiation for efficient incremental fetches
 - [x] Shallow clone support
-- [ ] Response compression (gzip/zstd on ref advertisement)
+- [x] Response compression (gzip/zstd on ref advertisement)
 
 ## v0.3 -- Production readiness
 

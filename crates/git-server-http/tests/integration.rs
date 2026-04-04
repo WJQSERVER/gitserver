@@ -1,5 +1,6 @@
 mod helpers;
 
+use std::io::Read;
 use std::path::Path;
 use std::process::Command;
 use std::io::Cursor;
@@ -154,6 +155,17 @@ fn pack_contains_ofs_delta(pack: &[u8]) -> bool {
             gix_pack::data::entry::Header::OfsDelta { .. }
         )
     })
+}
+
+fn decode_gzip(body: &[u8]) -> Vec<u8> {
+    let mut decoder = flate2::read::GzDecoder::new(body);
+    let mut decoded = Vec::new();
+    decoder.read_to_end(&mut decoded).expect("decode gzip body");
+    decoded
+}
+
+fn decode_zstd(body: &[u8]) -> Vec<u8> {
+    zstd::stream::decode_all(Cursor::new(body)).expect("decode zstd body")
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -484,6 +496,72 @@ async fn info_refs_advertises_protocol_v2_capabilities() {
     assert!(text.contains("version 2\n"));
     assert!(text.contains("ls-refs=unborn\n"));
     assert!(text.contains("fetch=shallow wait-for-done\n"));
+
+    server.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn info_refs_supports_gzip_compression() {
+    let root = TempDir::new().unwrap();
+    create_bare_repo_with_commits(root.path(), "compressed.git", 1);
+    let server = TestServer::start(root.path()).await;
+
+    let response = reqwest::Client::builder()
+        .no_gzip()
+        .build()
+        .expect("build reqwest client")
+        .get(format!(
+            "{}/info/refs?service=git-upload-pack",
+            server.url("compressed.git")
+        ))
+        .header("Accept-Encoding", "gzip")
+        .send()
+        .await
+        .expect("GET info/refs gzip");
+
+    assert_eq!(response.status(), 200);
+    assert_eq!(
+        response.headers().get("content-encoding").and_then(|v| v.to_str().ok()),
+        Some("gzip")
+    );
+
+    let body = response.bytes().await.expect("read gzip body");
+    let decoded = decode_gzip(&body);
+    let text = String::from_utf8_lossy(&decoded);
+    assert!(text.contains("refs/heads/main"));
+
+    server.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn info_refs_supports_zstd_compression() {
+    let root = TempDir::new().unwrap();
+    create_bare_repo_with_commits(root.path(), "compressed.git", 1);
+    let server = TestServer::start(root.path()).await;
+
+    let response = reqwest::Client::builder()
+        .no_zstd()
+        .build()
+        .expect("build reqwest client")
+        .get(format!(
+            "{}/info/refs?service=git-upload-pack",
+            server.url("compressed.git")
+        ))
+        .header("Accept-Encoding", "zstd")
+        .send()
+        .await
+        .expect("GET info/refs zstd");
+
+    assert_eq!(response.status(), 200);
+    assert_eq!(
+        response.headers().get("content-encoding").and_then(|v| v.to_str().ok()),
+        Some("zstd")
+    );
+
+    let body = response.bytes().await.expect("read zstd body");
+    let decoded = decode_zstd(&body);
+    let text = String::from_utf8_lossy(&decoded);
+    assert!(text.contains("refs/heads/main"));
 
     server.stop().await;
 }

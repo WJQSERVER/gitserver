@@ -38,6 +38,47 @@ fn is_protocol_v2(headers: &HeaderMap) -> bool {
         .unwrap_or(false)
 }
 
+#[derive(Copy, Clone)]
+enum CompressionEncoding {
+    Gzip,
+    Zstd,
+}
+
+fn negotiate_info_refs_encoding(headers: &HeaderMap) -> Option<CompressionEncoding> {
+    let accept_encoding = headers
+        .get(header::ACCEPT_ENCODING)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
+    if accept_encoding.contains("zstd") || accept_encoding.contains("zst") {
+        Some(CompressionEncoding::Zstd)
+    } else if accept_encoding.contains("gzip") {
+        Some(CompressionEncoding::Gzip)
+    } else {
+        None
+    }
+}
+
+fn compress_info_refs(body: Vec<u8>, encoding: CompressionEncoding) -> Result<(Vec<u8>, &'static str), AppError> {
+    match encoding {
+        CompressionEncoding::Gzip => {
+            let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+            std::io::Write::write_all(&mut encoder, &body)
+                .map_err(|e| AppError::Internal(format!("failed to gzip response: {e}")))?;
+            let compressed = encoder
+                .finish()
+                .map_err(|e| AppError::Internal(format!("failed to finish gzip response: {e}")))?;
+            Ok((compressed, "gzip"))
+        }
+        CompressionEncoding::Zstd => {
+            let compressed = zstd::stream::encode_all(std::io::Cursor::new(body), 3)
+                .map_err(|e| AppError::Internal(format!("failed to zstd response: {e}")))?;
+            Ok((compressed, "zstd"))
+        }
+    }
+}
+
 /// GET /{*path} -- dispatches to info_refs when path ends with /info/refs
 pub async fn info_refs_dispatch(
     State(store): State<SharedState>,
@@ -69,15 +110,25 @@ async fn info_refs_inner(
         let backend = GitBackend::new(repo_info.absolute_path.clone());
         backend.advertise_refs()?
     };
-    Ok(Response::builder()
+    let mut builder = Response::builder()
         .status(StatusCode::OK)
         .header(
             header::CONTENT_TYPE,
             "application/x-git-upload-pack-advertisement",
         )
-        .header(header::CACHE_CONTROL, "no-cache")
-        .body(Body::from(body))
-        .unwrap())
+        .header(header::CACHE_CONTROL, "no-cache");
+
+    let body = if let Some(encoding) = negotiate_info_refs_encoding(&headers) {
+        let (compressed, content_encoding) = compress_info_refs(body, encoding)?;
+        builder = builder
+            .header(header::CONTENT_ENCODING, content_encoding)
+            .header(header::VARY, "Accept-Encoding");
+        compressed
+    } else {
+        body
+    };
+
+    Ok(builder.body(Body::from(body)).unwrap())
 }
 
 /// POST /{*path} -- dispatches to upload_pack when path ends with /git-upload-pack
