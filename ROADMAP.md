@@ -21,7 +21,7 @@ Native smart HTTP Git server with gitoxide. Read-only clone and fetch.
 Reduce memory footprint and improve performance for large repositories.
 
 - [x] Streaming pack generation (avoid building the entire packfile in memory)
-- [ ] Delta compression (OFS_DELTA) to reduce transfer size
+- [x] Delta compression (OFS_DELTA) to reduce transfer size
 - [ ] Multi-ack negotiation for efficient incremental fetches
 - [ ] Shallow clone support
 - [ ] Response compression (gzip/zstd on ref advertisement)

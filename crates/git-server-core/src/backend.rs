@@ -89,6 +89,7 @@ mod tests {
             wants: vec![head.detach()],
             haves: vec![],
             done: true,
+            capabilities: Default::default(),
         };
         let reader = backend.upload_pack(&request).await.unwrap();
         let mut buf = Vec::new();
