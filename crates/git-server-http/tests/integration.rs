@@ -1,10 +1,87 @@
 mod helpers;
 
+use std::path::Path;
 use std::process::Command;
 
 use tempfile::TempDir;
 
 use helpers::{TestServer, create_bare_repo_with_commits};
+
+fn make_pktline(data: &str) -> Vec<u8> {
+    let len = data.len() + 4;
+    format!("{len:04x}{data}").into_bytes()
+}
+
+fn repo_head_oid(repo_path: &Path) -> String {
+    let out = Command::new("git")
+        .args(["rev-parse", "refs/heads/main"])
+        .current_dir(repo_path)
+        .output()
+        .expect("git rev-parse");
+    assert!(
+        out.status.success(),
+        "git rev-parse failed: stdout={}, stderr={}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    String::from_utf8(out.stdout)
+        .expect("head oid should be valid utf-8")
+        .trim()
+        .to_owned()
+}
+
+fn add_large_commit(repo_path: &Path) {
+    let work_dir = TempDir::new().unwrap();
+    let work_path = work_dir.path().join("pusher");
+
+    let out = Command::new("git")
+        .args([
+            "clone",
+            repo_path.to_str().unwrap(),
+            work_path.to_str().unwrap(),
+        ])
+        .output()
+        .expect("git clone for large commit");
+    assert!(out.status.success(), "git clone failed: {:?}", out);
+
+    for (key, val) in [("user.name", "Test User"), ("user.email", "test@test.com")] {
+        let out = Command::new("git")
+            .args(["config", key, val])
+            .current_dir(&work_path)
+            .output()
+            .expect("git config");
+        assert!(out.status.success(), "git config failed: {:?}", out);
+    }
+
+    let payload: Vec<u8> = (0..(2 * 1024 * 1024)).map(|i| (i % 251) as u8).collect();
+    std::fs::write(work_path.join("large.bin"), payload).unwrap();
+
+    let out = Command::new("git")
+        .args(["add", "large.bin"])
+        .current_dir(&work_path)
+        .output()
+        .expect("git add");
+    assert!(out.status.success(), "git add failed: {:?}", out);
+
+    let out = Command::new("git")
+        .args(["commit", "-m", "large payload"])
+        .current_dir(&work_path)
+        .env("GIT_AUTHOR_NAME", "Test User")
+        .env("GIT_AUTHOR_EMAIL", "test@test.com")
+        .env("GIT_COMMITTER_NAME", "Test User")
+        .env("GIT_COMMITTER_EMAIL", "test@test.com")
+        .output()
+        .expect("git commit");
+    assert!(out.status.success(), "git commit failed: {:?}", out);
+
+    let out = Command::new("git")
+        .args(["push", "origin", "main"])
+        .current_dir(&work_path)
+        .output()
+        .expect("git push");
+    assert!(out.status.success(), "git push failed: {:?}", out);
+}
 
 #[tokio::test(flavor = "multi_thread")]
 async fn clone_bare_repo() {
@@ -150,6 +227,64 @@ async fn fetch_new_commits() {
     let log = String::from_utf8_lossy(&out.stdout);
     let lines: Vec<&str> = log.trim().lines().collect();
     assert_eq!(lines.len(), 2, "expected 2 commits, got: {log}");
+
+    server.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn upload_pack_streams_large_responses() {
+    let root = TempDir::new().unwrap();
+    let bare_path = create_bare_repo_with_commits(root.path(), "stream.git", 1);
+    add_large_commit(&bare_path);
+    let head_oid = repo_head_oid(&bare_path);
+
+    let server = TestServer::start(root.path()).await;
+
+    let mut request_body = make_pktline(&format!("want {head_oid}\n"));
+    request_body.extend_from_slice(b"0000");
+    request_body.extend_from_slice(b"0009done\n");
+
+    let client = reqwest::Client::new();
+    let mut response = client
+        .post(server.url("stream.git/git-upload-pack"))
+        .header("content-type", "application/x-git-upload-pack-request")
+        .body(request_body)
+        .send()
+        .await
+        .expect("POST git-upload-pack");
+
+    assert_eq!(response.status(), 200);
+    assert_eq!(
+        response.content_length(),
+        None,
+        "streamed upload-pack responses should not advertise a fixed content length"
+    );
+
+    let first_chunk = response
+        .chunk()
+        .await
+        .expect("read first response chunk")
+        .expect("expected first response chunk");
+    assert!(
+        first_chunk.starts_with(b"0008NAK\n"),
+        "streamed response should start with upload-pack preamble"
+    );
+
+    let mut body = first_chunk.to_vec();
+    let mut chunk_count = 1;
+    while let Some(chunk) = response.chunk().await.expect("read response chunk") {
+        chunk_count += 1;
+        body.extend_from_slice(&chunk);
+    }
+
+    assert!(
+        chunk_count > 1,
+        "large pack responses should be readable incrementally"
+    );
+    assert!(
+        body.windows(4).any(|window| window == b"PACK"),
+        "streamed response should contain pack data"
+    );
 
     server.stop().await;
 }
