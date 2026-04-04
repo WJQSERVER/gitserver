@@ -570,6 +570,84 @@ async fn git_fetch_works_over_protocol_v2() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn git_ls_remote_works_over_protocol_v2() {
+    let root = TempDir::new().unwrap();
+    create_bare_repo_with_commits(root.path(), "v2.git", 1);
+    let server = TestServer::start(root.path()).await;
+
+    let output = tokio::task::spawn_blocking({
+        let url = server.url("v2.git");
+        move || {
+            Command::new("git")
+                .args(["-c", "protocol.version=2", "ls-remote", &url, "HEAD"])
+                .output()
+                .expect("git ls-remote protocol v2")
+        }
+    })
+    .await
+    .unwrap();
+
+    assert!(
+        output.status.success(),
+        "git ls-remote v2 failed: stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("HEAD"),
+        "expected HEAD in ls-remote output"
+    );
+
+    server.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn git_clone_works_over_protocol_v2() {
+    let root = TempDir::new().unwrap();
+    create_bare_repo_with_commits(root.path(), "v2.git", 3);
+    let server = TestServer::start(root.path()).await;
+
+    let clone_dir = TempDir::new().unwrap();
+    let clone_path = clone_dir.path().join("cloned-v2");
+
+    let output = tokio::task::spawn_blocking({
+        let url = server.url("v2.git");
+        let clone_path = clone_path.clone();
+        move || {
+            Command::new("git")
+                .args([
+                    "-c",
+                    "protocol.version=2",
+                    "clone",
+                    &url,
+                    clone_path.to_str().unwrap(),
+                ])
+                .output()
+                .expect("git clone protocol v2")
+        }
+    })
+    .await
+    .unwrap();
+
+    assert!(
+        output.status.success(),
+        "git clone v2 failed: stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+
+    let log = Command::new("git")
+        .args(["log", "--oneline"])
+        .current_dir(&clone_path)
+        .output()
+        .expect("git log after v2 clone");
+    assert!(log.status.success(), "git log failed after v2 clone");
+    assert_eq!(String::from_utf8_lossy(&log.stdout).trim().lines().count(), 3);
+
+    server.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn upload_pack_v2_fetch_negotiation_returns_acknowledgments() {
     let root = TempDir::new().unwrap();
     let bare_path = create_bare_repo_with_commits(root.path(), "v2.git", 2);
