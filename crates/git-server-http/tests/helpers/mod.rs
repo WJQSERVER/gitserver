@@ -5,6 +5,7 @@ use std::process::Command;
 use tempfile::TempDir;
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
+use tokio::time::{Duration, MissedTickBehavior};
 
 use git_server_core::discovery::RepoStore;
 
@@ -19,7 +20,8 @@ impl TestServer {
     /// Start a test server serving repositories discovered under `root`.
     pub async fn start(root: &Path) -> Self {
         let store = RepoStore::discover(root.to_path_buf(), 0).expect("discover repos");
-        let router = git_server_http::router(store);
+        let state = git_server_http::SharedState::new(store);
+        let router = git_server_http::router(state.clone());
 
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
@@ -27,6 +29,16 @@ impl TestServer {
         let addr = listener.local_addr().expect("local addr");
 
         let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
+
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_millis(100));
+            interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+            interval.tick().await;
+            loop {
+                interval.tick().await;
+                let _ = state.refresh().await;
+            }
+        });
 
         let handle = tokio::spawn(async move {
             axum::serve(listener, router)

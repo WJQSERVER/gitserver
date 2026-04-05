@@ -21,7 +21,7 @@ pub struct HealthzResponse {
 
 /// GET / -- list all discovered repositories
 pub async fn list_repos(State(store): State<SharedState>) -> Json<Vec<RepoInfo>> {
-    Json(store.list().to_vec())
+    Json(store.list().await)
 }
 
 /// GET /healthz -- lightweight readiness/liveness probe.
@@ -117,7 +117,7 @@ async fn info_refs_inner(
     let body = if is_protocol_v2(&headers) {
         git_server_core::protocol_v2::advertise_capabilities()
     } else {
-        let repo_info = store.resolve(repo_path)?;
+        let repo_info = store.resolve(repo_path).await?;
         let backend = GitBackend::new(repo_info.absolute_path.clone());
         backend.advertise_refs()?
     };
@@ -170,7 +170,7 @@ async fn upload_pack_inner(
             "invalid content type: expected application/x-git-upload-pack-request, got {content_type}"
         )));
     }
-    let repo_info = store.resolve(repo_path)?;
+    let repo_info = store.resolve(repo_path).await?;
     let backend = GitBackend::new(repo_info.absolute_path.clone());
 
     if is_protocol_v2(&headers) {
@@ -282,7 +282,7 @@ mod tests {
     async fn list_repos_returns_json() {
         let tmp = TempDir::new().unwrap();
         let store = test_store(&tmp);
-        let app = router(store);
+        let app = router(crate::SharedState::new(store));
 
         let response = app
             .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
@@ -302,7 +302,7 @@ mod tests {
     async fn healthz_returns_ok_json() {
         let tmp = TempDir::new().unwrap();
         let store = test_store(&tmp);
-        let app = router(store);
+        let app = router(crate::SharedState::new(store));
 
         let response = app
             .oneshot(Request::builder().uri("/healthz").body(Body::empty()).unwrap())
@@ -320,7 +320,7 @@ mod tests {
     async fn info_refs_requires_service_param() {
         let tmp = TempDir::new().unwrap();
         let store = test_store(&tmp);
-        let app = router(store);
+        let app = router(crate::SharedState::new(store));
 
         let response = app
             .oneshot(
@@ -340,7 +340,7 @@ mod tests {
     async fn info_refs_rejects_receive_pack() {
         let tmp = TempDir::new().unwrap();
         let store = test_store(&tmp);
-        let app = router(store);
+        let app = router(crate::SharedState::new(store));
 
         let response = app
             .oneshot(
@@ -363,7 +363,7 @@ mod tests {
     async fn nonexistent_repo_returns_404() {
         let tmp = TempDir::new().unwrap();
         let store = test_store(&tmp);
-        let app = router(store);
+        let app = router(crate::SharedState::new(store));
 
         let response = app
             .oneshot(
@@ -386,7 +386,7 @@ mod tests {
     async fn upload_pack_rejects_wrong_content_type() {
         let tmp = TempDir::new().unwrap();
         let store = test_store(&tmp);
-        let app = router(store);
+        let app = router(crate::SharedState::new(store));
 
         let response = app
             .oneshot(

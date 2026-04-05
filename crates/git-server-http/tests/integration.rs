@@ -1076,6 +1076,59 @@ async fn healthz_endpoint_returns_ok() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn repository_list_hot_reloads_after_new_repo_appears() {
+    let root = TempDir::new().unwrap();
+    create_bare_repo_with_commits(root.path(), "alpha.git", 1);
+
+    let server = TestServer::start(root.path()).await;
+
+    let initial = reqwest::get(server.url(""))
+        .await
+        .expect("GET initial repo list")
+        .json::<serde_json::Value>()
+        .await
+        .expect("parse initial repo list");
+    assert_eq!(initial.as_array().unwrap().len(), 1);
+
+    create_bare_repo_with_commits(root.path(), "beta.git", 1);
+
+    let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(2);
+    let mut saw_beta = false;
+    while tokio::time::Instant::now() < deadline {
+        let list = reqwest::get(server.url(""))
+            .await
+            .expect("GET refreshed repo list")
+            .json::<serde_json::Value>()
+            .await
+            .expect("parse refreshed repo list");
+
+        if list
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|repo| repo["name"] == "beta.git")
+        {
+            saw_beta = true;
+            break;
+        }
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    }
+
+    assert!(saw_beta, "expected beta.git to appear after automatic rescan");
+
+    let info_refs = reqwest::get(format!(
+        "{}/info/refs?service=git-upload-pack",
+        server.url("beta.git")
+    ))
+    .await
+    .expect("GET beta info/refs");
+    assert_eq!(info_refs.status(), 200);
+
+    server.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn nonexistent_repo_returns_404() {
     let root = TempDir::new().unwrap();
     // Create one repo so the store is non-empty, but we query a different name

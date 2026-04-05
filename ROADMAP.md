@@ -31,7 +31,7 @@ Reduce memory footprint and improve performance for large repositories.
 
 Operational features for running at scale.
 
-- [ ] Hot-reload of repository list (watch filesystem or periodic rescan)
+- [x] Hot-reload of repository list (watch filesystem or periodic rescan)
 - [x] Health check endpoint (`GET /healthz`)
 - [ ] Prometheus metrics (request count, latency, pack size, active connections)
 - [ ] Graceful shutdown with in-flight request draining

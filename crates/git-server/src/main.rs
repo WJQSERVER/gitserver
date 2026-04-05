@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use clap::Parser;
+use tokio::time::{Duration, MissedTickBehavior};
 use tracing::info;
 
 use git_server_core::discovery::RepoStore;
@@ -38,6 +39,10 @@ struct Cli {
     /// Max directory depth for repo discovery
     #[arg(long, default_value_t = 3)]
     max_depth: u32,
+
+    /// Periodically rescan repositories to pick up additions/removals.
+    #[arg(long, default_value_t = 30)]
+    rescan_interval_secs: u64,
 }
 
 #[derive(Clone, clap::ValueEnum)]
@@ -84,7 +89,24 @@ fn main() -> anyhow::Result<()> {
     let runtime = builder.build()?;
 
     runtime.block_on(async {
-        let app = git_server_http::router(store);
+        let state = git_server_http::SharedState::new(store);
+        let app = git_server_http::router(state.clone());
+
+        let interval_secs = cli.rescan_interval_secs;
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(interval_secs));
+            interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+            interval.tick().await;
+
+            loop {
+                interval.tick().await;
+                match state.refresh().await {
+                    Ok(()) => tracing::debug!("repository list refreshed"),
+                    Err(err) => tracing::warn!("failed to refresh repository list: {err}"),
+                }
+            }
+        });
+
         let addr = format!("{}:{}", cli.bind, cli.port);
         let listener = tokio::net::TcpListener::bind(&addr).await?;
         info!(%addr, "server listening");

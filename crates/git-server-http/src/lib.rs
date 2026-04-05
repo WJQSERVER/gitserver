@@ -5,11 +5,37 @@ use std::sync::Arc;
 
 use axum::{Router, routing::get, routing::post};
 use git_server_core::discovery::RepoStore;
+use tokio::sync::RwLock;
 
-pub type SharedState = Arc<RepoStore>;
+#[derive(Clone)]
+pub struct SharedState {
+    store: Arc<RwLock<RepoStore>>,
+}
 
-pub fn router(store: RepoStore) -> Router {
-    let state: SharedState = Arc::new(store);
+impl SharedState {
+    pub fn new(store: RepoStore) -> Self {
+        Self {
+            store: Arc::new(RwLock::new(store)),
+        }
+    }
+
+    pub async fn list(&self) -> Vec<git_server_core::discovery::RepoInfo> {
+        self.store.read().await.list().to_vec()
+    }
+
+    pub async fn resolve(
+        &self,
+        relative: &str,
+    ) -> git_server_core::error::Result<git_server_core::discovery::RepoInfo> {
+        self.store.read().await.resolve(relative).cloned()
+    }
+
+    pub async fn refresh(&self) -> git_server_core::error::Result<()> {
+        self.store.write().await.refresh()
+    }
+}
+
+pub fn router(state: SharedState) -> Router {
     Router::new()
         .route("/healthz", get(handlers::healthz))
         .route("/", get(handlers::list_repos))

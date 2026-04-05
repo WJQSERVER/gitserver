@@ -20,9 +20,10 @@ pub struct RepoInfo {
 }
 
 /// A store of discovered repositories under a root directory.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RepoStore {
     root: PathBuf,
+    max_depth: u32,
     repos: Vec<RepoInfo>,
 }
 
@@ -41,7 +42,11 @@ impl RepoStore {
 
         repos.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
 
-        Ok(Self { root, repos })
+        Ok(Self {
+            root,
+            max_depth,
+            repos,
+        })
     }
 
     /// Resolve a relative path to a `RepoInfo`.
@@ -64,6 +69,18 @@ impl RepoStore {
     /// Returns the root directory used for discovery.
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    /// Returns the configured maximum discovery depth.
+    pub fn max_depth(&self) -> u32 {
+        self.max_depth
+    }
+
+    /// Re-run repository discovery using the original root and max depth.
+    pub fn refresh(&mut self) -> Result<()> {
+        let refreshed = Self::discover(self.root.clone(), self.max_depth)?;
+        self.repos = refreshed.repos;
+        Ok(())
     }
 }
 
@@ -258,5 +275,20 @@ mod tests {
             store.list()[0].description.as_deref(),
             Some("A test repository")
         );
+    }
+
+    #[test]
+    fn refresh_picks_up_new_repositories() {
+        let dir = TempDir::new().unwrap();
+        create_bare_repo(&dir.path().join("alpha.git"));
+
+        let mut store = RepoStore::discover(dir.path().to_path_buf(), 0).unwrap();
+        assert_eq!(store.list().len(), 1);
+
+        create_bare_repo(&dir.path().join("beta.git"));
+        store.refresh().unwrap();
+
+        assert_eq!(store.list().len(), 2);
+        assert!(store.list().iter().any(|repo| repo.name == "beta.git"));
     }
 }

@@ -56,7 +56,7 @@ async fn start_server(
     repo_path: &Path,
 ) -> (SocketAddr, oneshot::Sender<()>, tokio::task::JoinHandle<()>) {
     let store = RepoStore::discover(repo_path.parent().unwrap().to_path_buf(), 0).unwrap();
-    let router = git_server_http::router(store);
+    let router = git_server_http::router(git_server_http::SharedState::new(store));
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let (tx, rx) = oneshot::channel();
