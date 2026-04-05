@@ -266,7 +266,8 @@ fn encode_blob_delta(base: &[u8], target: &[u8]) -> Option<Vec<u8>> {
         .saturating_sub(prefix)
         .min(target.len().saturating_sub(prefix));
     let mut suffix = 0;
-    while suffix < max_suffix && base[base.len() - 1 - suffix] == target[target.len() - 1 - suffix] {
+    while suffix < max_suffix && base[base.len() - 1 - suffix] == target[target.len() - 1 - suffix]
+    {
         suffix += 1;
     }
 
@@ -461,9 +462,8 @@ fn common_haves(
     wants: &[gix::ObjectId],
     haves: &[gix::ObjectId],
 ) -> std::result::Result<Vec<gix::ObjectId>, Box<dyn std::error::Error + Send + Sync>> {
-    let want_set: HashSet<gix::ObjectId> = collect_all_oids(repo, wants, &[])?
-        .into_iter()
-        .collect();
+    let want_set: HashSet<gix::ObjectId> =
+        collect_all_oids(repo, wants, &[])?.into_iter().collect();
 
     Ok(haves
         .iter()
@@ -491,7 +491,18 @@ pub fn generate_pack(
     let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<Bytes, std::io::Error>>(64);
 
     let handle = tokio::task::spawn_blocking(move || {
-        if let Err(e) = generate_pack_sync(&repo_path, &wants, &haves, done, ofs_delta, multi_ack, multi_ack_detailed, &tx) {
+        if let Err(e) = generate_pack_sync(
+            &repo_path,
+            &wants,
+            &haves,
+            GeneratePackOptions {
+                done,
+                ofs_delta,
+                multi_ack,
+                multi_ack_detailed,
+            },
+            &tx,
+        ) {
             let _ = tx.blocking_send(Err(std::io::Error::other(e.to_string())));
         }
     });
@@ -511,14 +522,18 @@ pub fn generate_pack(
 ///
 /// Pass 1: collect OIDs only (lightweight -- no object data retained).
 /// Pass 2: re-read each object, compress, and stream it through `tx`.
-fn generate_pack_sync(
-    repo_path: &Path,
-    wants: &[gix::ObjectId],
-    haves: &[gix::ObjectId],
+struct GeneratePackOptions {
     done: bool,
     ofs_delta: bool,
     multi_ack: bool,
     multi_ack_detailed: bool,
+}
+
+fn generate_pack_sync(
+    repo_path: &Path,
+    wants: &[gix::ObjectId],
+    haves: &[gix::ObjectId],
+    options: GeneratePackOptions,
     tx: &tokio::sync::mpsc::Sender<std::result::Result<Bytes, std::io::Error>>,
 ) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
     const MAX_DELTA_BASES: usize = 8;
@@ -532,16 +547,20 @@ fn generate_pack_sync(
         Vec::new()
     };
 
-    if multi_ack && !haves.is_empty() && !done {
+    if options.multi_ack && !haves.is_empty() && !options.done {
         for oid in &common {
-            let suffix = if multi_ack_detailed { "common" } else { "continue" };
+            let suffix = if options.multi_ack_detailed {
+                "common"
+            } else {
+                "continue"
+            };
             send(tx, &encode_ack_line(*oid, Some(suffix)))?;
         }
         send(tx, &pktline::encode(b"NAK\n"))?;
         return Ok(());
     }
 
-    if multi_ack && !common.is_empty() {
+    if options.multi_ack && !common.is_empty() {
         send(tx, &encode_ack_line(*common.last().unwrap(), None))?;
     } else {
         // NAK line
@@ -570,7 +589,10 @@ fn generate_pack_sync(
         let obj = repo.find_object(*oid)?;
         let full_entry = build_base_entry(obj.kind, &obj.data);
         let mut used_delta = false;
-        let entry = if ofs_delta && obj.kind == gix::object::Kind::Blob && obj.data.len() >= MIN_DELTA_BLOB_SIZE {
+        let entry = if options.ofs_delta
+            && obj.kind == gix::object::Kind::Blob
+            && obj.data.len() >= MIN_DELTA_BLOB_SIZE
+        {
             recent_blob_bases
                 .iter()
                 .filter(|base| base.data.len() >= MIN_DELTA_BLOB_SIZE)
@@ -579,9 +601,8 @@ fn generate_pack_sync(
                 })
                 .min_by_key(Vec::len)
                 .filter(|delta_entry| delta_entry.len() < full_entry.len())
-                .map(|delta_entry| {
+                .inspect(|_| {
                     used_delta = true;
-                    delta_entry
                 })
                 .unwrap_or(full_entry)
         } else {
@@ -591,7 +612,10 @@ fn generate_pack_sync(
         hasher.update(&entry);
         send_sideband(tx, &entry)?;
 
-        if obj.kind == gix::object::Kind::Blob && !used_delta && obj.data.len() >= MIN_DELTA_BLOB_SIZE {
+        if obj.kind == gix::object::Kind::Blob
+            && !used_delta
+            && obj.data.len() >= MIN_DELTA_BLOB_SIZE
+        {
             recent_blob_bases.push(BlobDeltaBase {
                 pack_offset,
                 data: obj.data.to_vec(),
@@ -762,7 +786,10 @@ mod tests {
         body.extend_from_slice(b"0009done\n");
         let req = UploadPackRequest::parse(&body).unwrap();
         assert_eq!(req.shallow.depth, Some(2));
-        assert_eq!(req.shallow.client_shallows, vec![gix::ObjectId::from_hex(hash.as_bytes()).unwrap()]);
+        assert_eq!(
+            req.shallow.client_shallows,
+            vec![gix::ObjectId::from_hex(hash.as_bytes()).unwrap()]
+        );
         assert!(req.shallow.deepen_relative);
     }
 

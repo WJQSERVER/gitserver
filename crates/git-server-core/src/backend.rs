@@ -36,8 +36,8 @@ impl GitBackend {
             let mut request = SyncIoBridge::new(request);
             crate::receive_pack::receive_pack(&repo_path, &mut request)
         })
-            .await
-            .map_err(|e| crate::error::Error::Protocol(format!("receive-pack task panicked: {e}")))?
+        .await
+        .map_err(|e| crate::error::Error::Protocol(format!("receive-pack task panicked: {e}")))?
     }
 }
 

@@ -31,6 +31,7 @@ impl TestServer {
         Self::start_with_state(state).await
     }
 
+    #[allow(dead_code)]
     pub async fn start_with_auth(root: &Path, auth: git_server_http::AuthConfig) -> Self {
         let store = RepoStore::discover(root.to_path_buf(), 0).expect("discover repos");
         let state = git_server_http::SharedState::with_store_and_auth_policy(

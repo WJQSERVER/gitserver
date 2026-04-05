@@ -8,8 +8,8 @@ use axum::{
 use http_body_util::BodyExt;
 use serde::Deserialize;
 use serde::Serialize;
-use tokio_util::io::{ReaderStream, StreamReader};
 use tokio_stream::StreamExt;
+use tokio_util::io::{ReaderStream, StreamReader};
 
 use git_server_core::{backend::GitBackend, discovery::RepoInfo};
 
@@ -87,10 +87,14 @@ fn negotiate_info_refs_encoding(headers: &HeaderMap) -> Option<CompressionEncodi
     }
 }
 
-fn compress_info_refs(body: Vec<u8>, encoding: CompressionEncoding) -> Result<(Vec<u8>, &'static str), AppError> {
+fn compress_info_refs(
+    body: Vec<u8>,
+    encoding: CompressionEncoding,
+) -> Result<(Vec<u8>, &'static str), AppError> {
     match encoding {
         CompressionEncoding::Gzip => {
-            let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+            let mut encoder =
+                flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
             std::io::Write::write_all(&mut encoder, &body)
                 .map_err(|e| AppError::Internal(format!("failed to gzip response: {e}")))?;
             let compressed = encoder
@@ -164,7 +168,7 @@ async fn info_refs_inner(
             return Err(AppError::BadRequest(format!(
                 "unsupported service: {}",
                 query.service
-            )))
+            )));
         }
     };
     info_refs_endpoint(store, repo_path, service, headers).await
@@ -178,16 +182,25 @@ pub async fn info_refs_endpoint(
 ) -> Result<Response, AppError> {
     match service {
         ServiceKind::UploadPack if !store.policy().upload_pack => {
-            return Err(AppError::NotFound(format!("service disabled: {}", service.as_str())));
+            return Err(AppError::NotFound(format!(
+                "service disabled: {}",
+                service.as_str()
+            )));
         }
         ServiceKind::ReceivePack if !store.policy().receive_pack => {
-            return Err(AppError::NotFound(format!("service disabled: {}", service.as_str())));
+            return Err(AppError::NotFound(format!(
+                "service disabled: {}",
+                service.as_str()
+            )));
         }
         _ => {}
     }
 
     require_auth(store, &headers)?;
-    let body = if service == ServiceKind::UploadPack && is_protocol_v2(&headers) && store.policy().upload_pack_v2 {
+    let body = if service == ServiceKind::UploadPack
+        && is_protocol_v2(&headers)
+        && store.policy().upload_pack_v2
+    {
         git_server_core::protocol_v2::advertise_capabilities()
     } else {
         let repo_info = store.resolve(repo_path).await?;
@@ -254,10 +267,16 @@ pub async fn rpc_endpoint(
 ) -> Result<Response, AppError> {
     match service {
         ServiceKind::UploadPack if !store.policy().upload_pack => {
-            return Err(AppError::NotFound(format!("service disabled: {}", service.as_str())));
+            return Err(AppError::NotFound(format!(
+                "service disabled: {}",
+                service.as_str()
+            )));
         }
         ServiceKind::ReceivePack if !store.policy().receive_pack => {
-            return Err(AppError::NotFound(format!("service disabled: {}", service.as_str())));
+            return Err(AppError::NotFound(format!(
+                "service disabled: {}",
+                service.as_str()
+            )));
         }
         _ => {}
     }
@@ -338,13 +357,14 @@ async fn receive_pack_streaming_endpoint(
         .into_data_stream()
         .map(|result| result.map_err(std::io::Error::other));
     let request_reader = StreamReader::new(request_stream);
-    let body = backend
-        .receive_pack(request_reader)
-        .await?;
+    let body = backend.receive_pack(request_reader).await?;
 
     Ok(Response::builder()
         .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, "application/x-git-receive-pack-result")
+        .header(
+            header::CONTENT_TYPE,
+            "application/x-git-receive-pack-result",
+        )
         .header(header::CACHE_CONTROL, "no-cache")
         .body(Body::from(body))
         .unwrap())
@@ -360,16 +380,21 @@ async fn upload_pack_v2(
             .status(StatusCode::OK)
             .header(header::CONTENT_TYPE, "application/x-git-upload-pack-result")
             .header(header::CACHE_CONTROL, "no-cache")
-            .body(Body::from(git_server_core::protocol_v2::ls_refs(repo_path, &req)?))
+            .body(Body::from(git_server_core::protocol_v2::ls_refs(
+                repo_path, &req,
+            )?))
             .unwrap()),
         git_server_core::protocol_v2::Command::Fetch(mut req) => {
-            let shallow_update = git_server_core::protocol_v2::apply_shallow_boundaries(repo_path, &mut req)?;
+            let shallow_update =
+                git_server_core::protocol_v2::apply_shallow_boundaries(repo_path, &mut req)?;
             let is_shallow_negotiation = req.upload_request.shallow.depth.is_some();
 
             if !req.upload_request.done && !is_shallow_negotiation {
                 let common = git_server_core::protocol_v2::common_haves(repo_path, &req)?;
                 let mut body = git_server_core::protocol_v2::encode_fetch_acknowledgments(&common);
-                body.extend_from_slice(&git_server_core::protocol_v2::encode_shallow_info(&shallow_update));
+                body.extend_from_slice(&git_server_core::protocol_v2::encode_shallow_info(
+                    &shallow_update,
+                ));
 
                 return Ok(Response::builder()
                     .status(StatusCode::OK)
@@ -379,19 +404,27 @@ async fn upload_pack_v2(
                     .unwrap());
             }
 
-            let reader = backend.upload_pack(&req.upload_request).await.map_err(|e| {
-                tracing::error!("pack generation failed: {e}");
-                AppError::Internal("internal server error".into())
-            })?;
+            let reader = backend
+                .upload_pack(&req.upload_request)
+                .await
+                .map_err(|e| {
+                    tracing::error!("pack generation failed: {e}");
+                    AppError::Internal("internal server error".into())
+                })?;
 
-            let mut body = if is_shallow_negotiation && !req.upload_request.haves.is_empty() && !req.upload_request.done {
+            let mut body = if is_shallow_negotiation
+                && !req.upload_request.haves.is_empty()
+                && !req.upload_request.done
+            {
                 git_server_core::protocol_v2::encode_fetch_ready_and_acknowledgments(
                     &git_server_core::protocol_v2::common_haves(repo_path, &req)?,
                 )
             } else {
                 Vec::new()
             };
-            body.extend_from_slice(&git_server_core::protocol_v2::encode_shallow_info(&shallow_update));
+            body.extend_from_slice(&git_server_core::protocol_v2::encode_shallow_info(
+                &shallow_update,
+            ));
             body.extend_from_slice(&git_server_core::pktline::encode(b"packfile\n"));
 
             Ok(Response::builder()
@@ -420,7 +453,9 @@ mod tests {
     use tempfile::TempDir;
     use tower::ServiceExt;
 
-    use git_server_core::discovery::{DynamicRepoRegistry, MutableRepoRegistry, RepoInfo, RepoStore};
+    use git_server_core::discovery::{
+        DynamicRepoRegistry, MutableRepoRegistry, RepoInfo, RepoStore,
+    };
 
     use crate::router;
 
@@ -464,7 +499,12 @@ mod tests {
         let app = router(crate::SharedState::new(store));
 
         let response = app
-            .oneshot(Request::builder().uri("/healthz").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/healthz")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
 
@@ -511,7 +551,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

@@ -4,7 +4,9 @@ pub mod handlers;
 use std::sync::Arc;
 
 use axum::{Router, routing::get, routing::post};
-use git_server_core::discovery::{DynamicRepoRegistry, MutableRepoRegistry, RepoResolver, RepoStore};
+use git_server_core::discovery::{
+    DynamicRepoRegistry, MutableRepoRegistry, RepoResolver, RepoStore,
+};
 use tokio::sync::RwLock;
 
 #[derive(Clone, Default)]
@@ -120,7 +122,10 @@ impl SharedState {
         }
     }
 
-    pub fn register_repo(&self, repo: git_server_core::discovery::RepoInfo) -> git_server_core::error::Result<()> {
+    pub fn register_repo(
+        &self,
+        repo: git_server_core::discovery::RepoInfo,
+    ) -> git_server_core::error::Result<()> {
         match &self.mode {
             RepoMode::Dynamic { registry, .. } => registry.register(repo),
             RepoMode::Discovered(_) => Err(git_server_core::error::Error::Protocol(

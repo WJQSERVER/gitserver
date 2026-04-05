@@ -1,10 +1,10 @@
 mod helpers;
 
 use git_server_core::discovery::MutableRepoRegistry;
+use std::io::Cursor;
 use std::io::Read;
 use std::path::Path;
 use std::process::Command;
-use std::io::Cursor;
 
 use tempfile::TempDir;
 
@@ -324,7 +324,9 @@ async fn upload_pack_v1_multi_ack_returns_continue_for_common_have() {
     let head_oid = repo_head_oid(&bare_path);
     let server = TestServer::start(root.path()).await;
 
-    let mut request_body = make_pktline(&format!("want {head_oid} multi_ack_detailed side-band-64k ofs-delta\n"));
+    let mut request_body = make_pktline(&format!(
+        "want {head_oid} multi_ack_detailed side-band-64k ofs-delta\n"
+    ));
     request_body.extend_from_slice(b"0000");
     request_body.extend_from_slice(&make_pktline(&format!("have {head_oid}\n")));
     request_body.extend_from_slice(b"0000");
@@ -342,7 +344,10 @@ async fn upload_pack_v1_multi_ack_returns_continue_for_common_have() {
     let text = String::from_utf8_lossy(&body);
     assert!(text.contains(&format!("ACK {head_oid} common\n")));
     assert!(text.contains("NAK\n"));
-    assert!(!text.contains("PACK"), "negotiation round should not send pack yet");
+    assert!(
+        !text.contains("PACK"),
+        "negotiation round should not send pack yet"
+    );
 
     server.stop().await;
 }
@@ -361,7 +366,13 @@ async fn git_fetch_works_over_protocol_v1_with_multi_ack() {
         let clone_path = clone_path.clone();
         move || {
             Command::new("git")
-                .args(["-c", "protocol.version=1", "clone", &url, clone_path.to_str().unwrap()])
+                .args([
+                    "-c",
+                    "protocol.version=1",
+                    "clone",
+                    &url,
+                    clone_path.to_str().unwrap(),
+                ])
                 .output()
                 .expect("git clone protocol v1")
         }
@@ -579,8 +590,7 @@ async fn upload_pack_uses_ofs_delta_when_requested() {
     let head_oid = repo_head_oid(&bare_path);
     let server = TestServer::start(root.path()).await;
 
-    let mut request_body =
-        make_pktline(&format!("want {head_oid} side-band-64k ofs-delta\n"));
+    let mut request_body = make_pktline(&format!("want {head_oid} side-band-64k ofs-delta\n"));
     request_body.extend_from_slice(b"0000");
     request_body.extend_from_slice(b"0009done\n");
 
@@ -651,7 +661,10 @@ async fn info_refs_supports_gzip_compression() {
 
     assert_eq!(response.status(), 200);
     assert_eq!(
-        response.headers().get("content-encoding").and_then(|v| v.to_str().ok()),
+        response
+            .headers()
+            .get("content-encoding")
+            .and_then(|v| v.to_str().ok()),
         Some("gzip")
     );
 
@@ -684,7 +697,10 @@ async fn info_refs_supports_zstd_compression() {
 
     assert_eq!(response.status(), 200);
     assert_eq!(
-        response.headers().get("content-encoding").and_then(|v| v.to_str().ok()),
+        response
+            .headers()
+            .get("content-encoding")
+            .and_then(|v| v.to_str().ok()),
         Some("zstd")
     );
 
@@ -751,7 +767,11 @@ async fn git_fetch_works_over_protocol_v2() {
         .current_dir(repo_path)
         .output()
         .expect("git remote add");
-    assert!(remote.status.success(), "git remote add failed: {:?}", remote);
+    assert!(
+        remote.status.success(),
+        "git remote add failed: {:?}",
+        remote
+    );
 
     let fetch = tokio::task::spawn_blocking({
         let repo_path = repo_path.to_path_buf();
@@ -893,7 +913,10 @@ async fn git_clone_works_over_protocol_v2() {
         .output()
         .expect("git log after v2 clone");
     assert!(log.status.success(), "git log failed after v2 clone");
-    assert_eq!(String::from_utf8_lossy(&log.stdout).trim().lines().count(), 3);
+    assert_eq!(
+        String::from_utf8_lossy(&log.stdout).trim().lines().count(),
+        3
+    );
 
     server.stop().await;
 }
@@ -940,10 +963,18 @@ async fn git_shallow_clone_works_over_protocol_v2() {
         .output()
         .expect("git log after shallow clone");
     assert!(log.status.success(), "git log failed after shallow clone");
-    assert_eq!(String::from_utf8_lossy(&log.stdout).trim().lines().count(), 1);
+    assert_eq!(
+        String::from_utf8_lossy(&log.stdout).trim().lines().count(),
+        1
+    );
 
-    let shallow = std::fs::read_to_string(clone_path.join(".git/shallow")).expect("read shallow file");
-    assert_eq!(shallow.trim().lines().count(), 1, "expected one shallow boundary");
+    let shallow =
+        std::fs::read_to_string(clone_path.join(".git/shallow")).expect("read shallow file");
+    assert_eq!(
+        shallow.trim().lines().count(),
+        1,
+        "expected one shallow boundary"
+    );
 
     server.stop().await;
 }
@@ -976,13 +1007,24 @@ async fn git_fetch_deepen_works_over_protocol_v2() {
     })
     .await
     .unwrap();
-    assert!(clone.status.success(), "initial shallow clone failed: {:?}", clone);
+    assert!(
+        clone.status.success(),
+        "initial shallow clone failed: {:?}",
+        clone
+    );
 
     let deepen = tokio::task::spawn_blocking({
         let clone_path = clone_path.clone();
         move || {
             Command::new("git")
-                .args(["-c", "protocol.version=2", "fetch", "--deepen=1", "origin", "main"])
+                .args([
+                    "-c",
+                    "protocol.version=2",
+                    "fetch",
+                    "--deepen=1",
+                    "origin",
+                    "main",
+                ])
                 .current_dir(&clone_path)
                 .output()
                 .expect("git fetch deepen protocol v2")
@@ -1004,7 +1046,10 @@ async fn git_fetch_deepen_works_over_protocol_v2() {
         .output()
         .expect("git log after deepen");
     assert!(log.status.success(), "git log failed after deepen");
-    assert_eq!(String::from_utf8_lossy(&log.stdout).trim().lines().count(), 2);
+    assert_eq!(
+        String::from_utf8_lossy(&log.stdout).trim().lines().count(),
+        2
+    );
 
     server.stop().await;
 }
@@ -1035,7 +1080,10 @@ async fn upload_pack_v2_fetch_negotiation_returns_acknowledgments() {
         .expect("POST fetch negotiation v2");
 
     assert_eq!(response.status(), 200);
-    let body = response.bytes().await.expect("read fetch negotiation response");
+    let body = response
+        .bytes()
+        .await
+        .expect("read fetch negotiation response");
     let text = String::from_utf8_lossy(&body);
     assert!(text.contains("acknowledgments\n"));
     assert!(text.contains(&format!("ACK {head_oid}\n")));
@@ -1227,7 +1275,11 @@ async fn git_push_works_over_http_receive_pack() {
     let clone_dir = TempDir::new().unwrap();
     let clone_path = clone_dir.path().join("push-clone");
     let clone = Command::new("git")
-        .args(["clone", &server.url("push.git"), clone_path.to_str().unwrap()])
+        .args([
+            "clone",
+            &server.url("push.git"),
+            clone_path.to_str().unwrap(),
+        ])
         .output()
         .expect("git clone for push test");
     assert!(clone.status.success(), "git clone failed: {:?}", clone);
@@ -1277,7 +1329,11 @@ async fn git_push_works_over_http_receive_pack() {
         .current_dir(root.path().join("push.git"))
         .output()
         .expect("git rev-parse bare head");
-    assert!(remote_head.status.success(), "git rev-parse failed: {:?}", remote_head);
+    assert!(
+        remote_head.status.success(),
+        "git rev-parse failed: {:?}",
+        remote_head
+    );
 
     server.stop().await;
 }
@@ -1291,7 +1347,11 @@ async fn git_force_push_is_rejected_by_ref_update_validation() {
     let clone_dir = TempDir::new().unwrap();
     let clone_path = clone_dir.path().join("push-clone");
     let clone = Command::new("git")
-        .args(["clone", &server.url("push.git"), clone_path.to_str().unwrap()])
+        .args([
+            "clone",
+            &server.url("push.git"),
+            clone_path.to_str().unwrap(),
+        ])
         .output()
         .expect("git clone for force push test");
     assert!(clone.status.success(), "git clone failed: {:?}", clone);
@@ -1389,7 +1449,10 @@ async fn repository_list_hot_reloads_after_new_repo_appears() {
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
     }
 
-    assert!(saw_beta, "expected beta.git to appear after automatic rescan");
+    assert!(
+        saw_beta,
+        "expected beta.git to appear after automatic rescan"
+    );
 
     let info_refs = reqwest::get(format!(
         "{}/info/refs?service=git-upload-pack",
@@ -1464,7 +1527,8 @@ async fn receive_pack_is_disabled_by_default_policy() {
     let root = TempDir::new().unwrap();
     create_bare_repo_with_commits(root.path(), "readonly.git", 1);
 
-    let store = git_server_core::discovery::RepoStore::discover(root.path().to_path_buf(), 0).unwrap();
+    let store =
+        git_server_core::discovery::RepoStore::discover(root.path().to_path_buf(), 0).unwrap();
     let state = git_server_http::SharedState::with_store_and_auth_policy(
         store,
         git_server_http::AuthConfig::default(),

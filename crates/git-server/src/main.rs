@@ -106,10 +106,9 @@ fn main() -> anyhow::Result<()> {
 
     runtime.block_on(async {
         let auth = git_server_http::AuthConfig {
-            basic: cli
-                .auth_basic_username
-                .zip(cli.auth_basic_password)
-                .map(|(username, password)| git_server_http::BasicAuthConfig { username, password }),
+            basic: cli.auth_basic_username.zip(cli.auth_basic_password).map(
+                |(username, password)| git_server_http::BasicAuthConfig { username, password },
+            ),
             bearer_token: cli.auth_bearer_token,
         };
         let state = git_server_http::SharedState::with_store_and_auth_policy(

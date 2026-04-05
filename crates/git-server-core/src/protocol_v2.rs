@@ -76,7 +76,9 @@ pub fn parse_command_request(body: &[u8]) -> Result<Command> {
     match command {
         "ls-refs" => parse_ls_refs(args),
         "fetch" => parse_fetch(args),
-        _ => Err(Error::Protocol(format!("unsupported protocol v2 command: {command}"))),
+        _ => Err(Error::Protocol(format!(
+            "unsupported protocol v2 command: {command}"
+        ))),
     }
 }
 
@@ -85,7 +87,9 @@ pub fn ls_refs(repo_path: &Path, request: &LsRefsRequest) -> Result<Vec<u8>> {
     let mut refs = BTreeSet::new();
 
     if let Ok(mut head) = repo.head()
-        && let Some(id) = head.try_peel_to_id().map_err(|e| Error::Protocol(e.to_string()))?
+        && let Some(id) = head
+            .try_peel_to_id()
+            .map_err(|e| Error::Protocol(e.to_string()))?
     {
         let mut line = format!("{} HEAD", id.detach());
         if request.symrefs
@@ -102,7 +106,10 @@ pub fn ls_refs(repo_path: &Path, request: &LsRefsRequest) -> Result<Vec<u8>> {
         for mut reference in iter.flatten() {
             let name = reference.name().as_bstr().to_string();
             if !request.ref_prefixes.is_empty()
-                && !request.ref_prefixes.iter().any(|prefix| name.starts_with(prefix))
+                && !request
+                    .ref_prefixes
+                    .iter()
+                    .any(|prefix| name.starts_with(prefix))
             {
                 continue;
             }
@@ -162,7 +169,10 @@ pub fn encode_fetch_pack_response(pack_bytes: &[u8]) -> Vec<u8> {
         let payload = &pack_bytes[pos..pos + (len - 4)];
         pos += len - 4;
 
-        if payload.starts_with(&[0x01]) || payload.starts_with(&[0x02]) || payload.starts_with(&[0x03]) {
+        if payload.starts_with(&[0x01])
+            || payload.starts_with(&[0x02])
+            || payload.starts_with(&[0x03])
+        {
             out.extend_from_slice(frame);
         }
     }
@@ -275,7 +285,10 @@ impl<R: tokio::io::AsyncRead + Unpin> tokio::io::AsyncRead for PackSectionReader
 
                 let frame = self.buf[..len].to_vec();
                 let payload = &frame[4..];
-                if payload.starts_with(&[0x01]) || payload.starts_with(&[0x02]) || payload.starts_with(&[0x03]) {
+                if payload.starts_with(&[0x01])
+                    || payload.starts_with(&[0x02])
+                    || payload.starts_with(&[0x03])
+                {
                     emitted.extend_from_slice(&frame);
                 }
                 self.buf.drain(..len);
@@ -353,9 +366,10 @@ pub fn encode_shallow_info(update: &ShallowUpdate) -> Vec<u8> {
 
 pub fn common_haves(repo_path: &Path, request: &FetchRequest) -> Result<Vec<gix::ObjectId>> {
     let repo = gix::open(repo_path)?;
-    let want_set: HashSet<gix::ObjectId> = collect_want_closure(&repo, &request.upload_request.wants)?
-        .into_iter()
-        .collect();
+    let want_set: HashSet<gix::ObjectId> =
+        collect_want_closure(&repo, &request.upload_request.wants)?
+            .into_iter()
+            .collect();
 
     Ok(request
         .upload_request
@@ -366,7 +380,10 @@ pub fn common_haves(repo_path: &Path, request: &FetchRequest) -> Result<Vec<gix:
         .collect())
 }
 
-pub fn apply_shallow_boundaries(repo_path: &Path, request: &mut FetchRequest) -> Result<ShallowUpdate> {
+pub fn apply_shallow_boundaries(
+    repo_path: &Path,
+    request: &mut FetchRequest,
+) -> Result<ShallowUpdate> {
     let Some(depth) = request.upload_request.shallow.depth else {
         return Ok(ShallowUpdate {
             shallow: Vec::new(),
@@ -379,7 +396,10 @@ pub fn apply_shallow_boundaries(repo_path: &Path, request: &mut FetchRequest) ->
     let state = collect_depth_limited_commits(&repo, &request.upload_request, depth)?;
 
     request.upload_request.wants = state.included_commits.clone();
-    request.upload_request.haves.extend(previous_shallows.iter().copied());
+    request
+        .upload_request
+        .haves
+        .extend(previous_shallows.iter().copied());
 
     let next_shallows: HashSet<_> = state.shallow_boundary.iter().copied().collect();
     let prev_shallows: HashSet<_> = previous_shallows.iter().copied().collect();
@@ -415,7 +435,9 @@ fn parse_ls_refs(args: Vec<String>) -> Result<Command> {
                 if let Some(prefix) = arg.strip_prefix("ref-prefix ") {
                     request.ref_prefixes.push(prefix.to_owned());
                 } else {
-                    return Err(Error::Protocol(format!("unsupported ls-refs argument: {arg}")));
+                    return Err(Error::Protocol(format!(
+                        "unsupported ls-refs argument: {arg}"
+                    )));
                 }
             }
         }
@@ -463,7 +485,9 @@ fn parse_fetch(args: Vec<String>) -> Result<Command> {
                 .map_err(|_| Error::Protocol(format!("invalid OID in have: {oid_hex}")))?;
             haves.push(oid);
         } else {
-            return Err(Error::Protocol(format!("unsupported fetch argument: {arg}")));
+            return Err(Error::Protocol(format!(
+                "unsupported fetch argument: {arg}"
+            )));
         }
     }
 
