@@ -1175,6 +1175,70 @@ async fn git_clone_works_with_basic_authentication() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn git_push_works_over_http_receive_pack() {
+    let root = TempDir::new().unwrap();
+    create_bare_repo_with_commits(root.path(), "push.git", 1);
+    let server = TestServer::start(root.path()).await;
+
+    let clone_dir = TempDir::new().unwrap();
+    let clone_path = clone_dir.path().join("push-clone");
+    let clone = Command::new("git")
+        .args(["clone", &server.url("push.git"), clone_path.to_str().unwrap()])
+        .output()
+        .expect("git clone for push test");
+    assert!(clone.status.success(), "git clone failed: {:?}", clone);
+
+    for (key, val) in [("user.name", "Test User"), ("user.email", "test@test.com")] {
+        let out = Command::new("git")
+            .args(["config", key, val])
+            .current_dir(&clone_path)
+            .output()
+            .expect("git config");
+        assert!(out.status.success(), "git config failed: {:?}", out);
+    }
+
+    std::fs::write(clone_path.join("push.txt"), "pushed\n").unwrap();
+    let out = Command::new("git")
+        .args(["add", "push.txt"])
+        .current_dir(&clone_path)
+        .output()
+        .expect("git add push file");
+    assert!(out.status.success(), "git add failed: {:?}", out);
+
+    let out = Command::new("git")
+        .args(["commit", "-m", "push commit"])
+        .current_dir(&clone_path)
+        .env("GIT_AUTHOR_NAME", "Test User")
+        .env("GIT_AUTHOR_EMAIL", "test@test.com")
+        .env("GIT_COMMITTER_NAME", "Test User")
+        .env("GIT_COMMITTER_EMAIL", "test@test.com")
+        .output()
+        .expect("git commit push file");
+    assert!(out.status.success(), "git commit failed: {:?}", out);
+
+    let push = Command::new("git")
+        .args(["push", "origin", "main"])
+        .current_dir(&clone_path)
+        .output()
+        .expect("git push over http");
+    assert!(
+        push.status.success(),
+        "git push failed: stdout={}, stderr={}",
+        String::from_utf8_lossy(&push.stdout),
+        String::from_utf8_lossy(&push.stderr),
+    );
+
+    let remote_head = Command::new("git")
+        .args(["rev-parse", "refs/heads/main"])
+        .current_dir(root.path().join("push.git"))
+        .output()
+        .expect("git rev-parse bare head");
+    assert!(remote_head.status.success(), "git rev-parse failed: {:?}", remote_head);
+
+    server.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn repository_list_hot_reloads_after_new_repo_appears() {
     let root = TempDir::new().unwrap();
     create_bare_repo_with_commits(root.path(), "alpha.git", 1);

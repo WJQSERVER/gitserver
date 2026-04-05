@@ -141,25 +141,32 @@ async fn info_refs_inner(
     headers: HeaderMap,
     query: InfoRefsQuery,
 ) -> Result<Response, AppError> {
-    if query.service != "git-upload-pack" {
+    if query.service != "git-upload-pack" && query.service != "git-receive-pack" {
         return Err(AppError::BadRequest(format!(
             "unsupported service: {}",
             query.service
         )));
     }
     require_auth(store, &headers)?;
-    let body = if is_protocol_v2(&headers) {
+    let body = if query.service == "git-upload-pack" && is_protocol_v2(&headers) {
         git_server_core::protocol_v2::advertise_capabilities()
     } else {
         let repo_info = store.resolve(repo_path).await?;
         let backend = GitBackend::new(repo_info.absolute_path.clone());
-        backend.advertise_refs()?
+        if query.service == "git-upload-pack" {
+            backend.advertise_refs()?
+        } else {
+            let mut body = git_server_core::pktline::encode_comment("service=git-receive-pack");
+            body.extend_from_slice(git_server_core::pktline::flush());
+            body.extend_from_slice(&backend.advertise_receive_refs()?);
+            body
+        }
     };
     let mut builder = Response::builder()
         .status(StatusCode::OK)
         .header(
             header::CONTENT_TYPE,
-            "application/x-git-upload-pack-advertisement",
+            format!("application/x-{}-advertisement", query.service),
         )
         .header(header::CACHE_CONTROL, "no-cache");
 
@@ -176,16 +183,20 @@ async fn info_refs_inner(
     Ok(builder.body(Body::from(body)).unwrap())
 }
 
-/// POST /{*path} -- dispatches to upload_pack when path ends with /git-upload-pack
-pub async fn upload_pack_dispatch(
+/// POST /{*path} -- dispatches to git-upload-pack or git-receive-pack.
+pub async fn rpc_dispatch(
     State(store): State<SharedState>,
     Path(path): Path<String>,
     headers: HeaderMap,
     request: axum::body::Bytes,
 ) -> Result<Response, AppError> {
-    let repo_path = strip_path_suffix(&path, "/git-upload-pack")
-        .ok_or_else(|| AppError::NotFound(format!("not found: /{path}")))?;
-    upload_pack_inner(&store, repo_path, headers, request).await
+    if let Some(repo_path) = strip_path_suffix(&path, "/git-upload-pack") {
+        upload_pack_inner(&store, repo_path, headers, request).await
+    } else if let Some(repo_path) = strip_path_suffix(&path, "/git-receive-pack") {
+        receive_pack_inner(&store, repo_path, headers, request).await
+    } else {
+        Err(AppError::NotFound(format!("not found: /{path}")))
+    }
 }
 
 async fn upload_pack_inner(
@@ -223,6 +234,35 @@ async fn upload_pack_inner(
         .header(header::CONTENT_TYPE, "application/x-git-upload-pack-result")
         .header(header::CACHE_CONTROL, "no-cache")
         .body(Body::from_stream(stream))
+        .unwrap())
+}
+
+async fn receive_pack_inner(
+    store: &SharedState,
+    repo_path: &str,
+    headers: HeaderMap,
+    request: axum::body::Bytes,
+) -> Result<Response, AppError> {
+    let content_type = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    if content_type != "application/x-git-receive-pack-request" {
+        return Err(AppError::BadRequest(format!(
+            "invalid content type: expected application/x-git-receive-pack-request, got {content_type}"
+        )));
+    }
+    require_auth(store, &headers)?;
+
+    let repo_info = store.resolve(repo_path).await?;
+    let backend = GitBackend::new(repo_info.absolute_path.clone());
+    let body = backend.receive_pack(request.to_vec()).await?;
+
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/x-git-receive-pack-result")
+        .header(header::CACHE_CONTROL, "no-cache")
+        .body(Body::from(body))
         .unwrap())
 }
 

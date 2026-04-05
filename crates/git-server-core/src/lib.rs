@@ -5,4 +5,5 @@ pub mod pack;
 pub mod path;
 pub mod pktline;
 pub mod protocol_v2;
+pub mod receive_pack;
 pub mod refs;

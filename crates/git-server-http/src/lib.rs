@@ -67,6 +67,6 @@ pub fn router(state: SharedState) -> Router {
         // catch-all -- which axum disallows.  Instead we use two separate
         // catch-all routes distinguished by their terminal component.
         .route("/{*path}", get(handlers::info_refs_dispatch))
-        .route("/{*path}", post(handlers::upload_pack_dispatch))
+        .route("/{*path}", post(handlers::rpc_dispatch))
         .with_state(state)
 }

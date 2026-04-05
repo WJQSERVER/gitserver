@@ -18,8 +18,19 @@ impl GitBackend {
         crate::refs::advertise_refs(&self.repo_path)
     }
 
+    pub fn advertise_receive_refs(&self) -> Result<Vec<u8>> {
+        crate::receive_pack::advertise_receive_refs(&self.repo_path)
+    }
+
     pub async fn upload_pack(&self, request: &UploadPackRequest) -> Result<impl AsyncRead + use<>> {
         crate::pack::generate_pack(&self.repo_path, request)
+    }
+
+    pub async fn receive_pack(&self, request: Vec<u8>) -> Result<Vec<u8>> {
+        let repo_path = self.repo_path.clone();
+        tokio::task::spawn_blocking(move || crate::receive_pack::receive_pack(&repo_path, &request))
+            .await
+            .map_err(|e| crate::error::Error::Protocol(format!("receive-pack task panicked: {e}")))?
     }
 }
 
