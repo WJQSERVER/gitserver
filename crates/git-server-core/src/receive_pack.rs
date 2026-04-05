@@ -4,6 +4,11 @@ use std::process::{Command, Stdio};
 
 use crate::error::{Error, Result};
 
+const RECEIVE_PACK_CONFIG: &[(&str, &str)] = &[
+    ("receive.denyDeletes", "true"),
+    ("receive.denyNonFastForwards", "true"),
+];
+
 pub fn advertise_receive_refs(repo_path: &Path) -> Result<Vec<u8>> {
     run_receive_pack(repo_path, &["--stateless-rpc", "--advertise-refs"], &[])
 }
@@ -13,8 +18,13 @@ pub fn receive_pack(repo_path: &Path, request: &[u8]) -> Result<Vec<u8>> {
 }
 
 fn run_receive_pack(repo_path: &Path, args: &[&str], input: &[u8]) -> Result<Vec<u8>> {
-    let mut child = Command::new("git")
-        .arg("receive-pack")
+    let mut command = Command::new("git");
+    for (key, value) in RECEIVE_PACK_CONFIG {
+        command.args(["-c", &format!("{key}={value}")]);
+    }
+    command.arg("receive-pack");
+
+    let mut child = command
         .args(args)
         .arg(repo_path)
         .stdin(Stdio::piped())

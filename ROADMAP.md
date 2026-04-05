@@ -42,10 +42,10 @@ Operational features for running at scale.
 
 Enable push operations.
 
-- [ ] `git-receive-pack` endpoint (POST + ref advertisement)
+- [x] `git-receive-pack` endpoint (POST + ref advertisement)
 - [ ] Pre-receive and post-receive hook support
 - [ ] Per-repository access control (read-only vs read-write)
-- [ ] Ref update validation
+- [x] Ref update validation
 
 ## Future considerations
 

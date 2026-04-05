@@ -1239,6 +1239,73 @@ async fn git_push_works_over_http_receive_pack() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn git_force_push_is_rejected_by_ref_update_validation() {
+    let root = TempDir::new().unwrap();
+    create_bare_repo_with_commits(root.path(), "push.git", 2);
+    let server = TestServer::start(root.path()).await;
+
+    let clone_dir = TempDir::new().unwrap();
+    let clone_path = clone_dir.path().join("push-clone");
+    let clone = Command::new("git")
+        .args(["clone", &server.url("push.git"), clone_path.to_str().unwrap()])
+        .output()
+        .expect("git clone for force push test");
+    assert!(clone.status.success(), "git clone failed: {:?}", clone);
+
+    let reset = Command::new("git")
+        .args(["reset", "--hard", "HEAD~1"])
+        .current_dir(&clone_path)
+        .output()
+        .expect("git reset hard");
+    assert!(reset.status.success(), "git reset failed: {:?}", reset);
+
+    let push = Command::new("git")
+        .args(["push", "--force", "origin", "main"])
+        .current_dir(&clone_path)
+        .output()
+        .expect("git force push over http");
+    assert!(
+        !push.status.success(),
+        "force push should be rejected: stdout={}, stderr={}",
+        String::from_utf8_lossy(&push.stdout),
+        String::from_utf8_lossy(&push.stderr),
+    );
+    assert!(
+        String::from_utf8_lossy(&push.stderr).contains("non-fast-forward"),
+        "expected non-fast-forward rejection message, got: {}",
+        String::from_utf8_lossy(&push.stderr)
+    );
+
+    server.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn git_delete_push_is_rejected_by_ref_update_validation() {
+    let root = TempDir::new().unwrap();
+    create_bare_repo_with_commits(root.path(), "push.git", 1);
+    let server = TestServer::start(root.path()).await;
+
+    let delete = Command::new("git")
+        .args(["push", &server.url("push.git"), ":main"])
+        .output()
+        .expect("git delete push over http");
+    assert!(
+        !delete.status.success(),
+        "delete push should be rejected: stdout={}, stderr={}",
+        String::from_utf8_lossy(&delete.stdout),
+        String::from_utf8_lossy(&delete.stderr),
+    );
+    assert!(
+        String::from_utf8_lossy(&delete.stderr).contains("deletion prohibited")
+            || String::from_utf8_lossy(&delete.stderr).contains("denyDeletes"),
+        "expected delete rejection message, got: {}",
+        String::from_utf8_lossy(&delete.stderr)
+    );
+
+    server.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn repository_list_hot_reloads_after_new_repo_appears() {
     let root = TempDir::new().unwrap();
     create_bare_repo_with_commits(root.path(), "alpha.git", 1);
