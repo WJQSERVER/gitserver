@@ -512,10 +512,25 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
 
-        let bytes = response.into_body().collect().await.unwrap().to_bytes();
-        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(json["error"], "bad_request");
+    #[tokio::test]
+    async fn info_refs_receive_pack_is_disabled_by_default() {
+        let tmp = TempDir::new().unwrap();
+        let store = test_store(&tmp);
+        let app = router(crate::SharedState::new(store));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/test.git/info/refs?service=git-receive-pack")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

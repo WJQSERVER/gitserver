@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, RwLock};
 
 use serde::Serialize;
 
@@ -25,6 +26,33 @@ pub struct RepoStore {
     root: PathBuf,
     max_depth: u32,
     repos: Vec<RepoInfo>,
+}
+
+pub trait RepoResolver: Send + Sync {
+    fn resolve(&self, relative: &str) -> Result<RepoInfo>;
+    fn list(&self) -> Result<Vec<RepoInfo>>;
+}
+
+pub trait MutableRepoRegistry: RepoResolver {
+    fn register(&self, repo: RepoInfo) -> Result<()>;
+    fn unregister(&self, relative: &str) -> Result<()>;
+}
+
+#[derive(Clone, Default)]
+pub struct DynamicRepoRegistry {
+    repos: Arc<RwLock<Vec<RepoInfo>>>,
+}
+
+impl DynamicRepoRegistry {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn from_repos(repos: Vec<RepoInfo>) -> Self {
+        Self {
+            repos: Arc::new(RwLock::new(repos)),
+        }
+    }
 }
 
 impl RepoStore {
@@ -80,6 +108,76 @@ impl RepoStore {
     pub fn refresh(&mut self) -> Result<()> {
         let refreshed = Self::discover(self.root.clone(), self.max_depth)?;
         self.repos = refreshed.repos;
+        Ok(())
+    }
+}
+
+impl RepoResolver for RepoStore {
+    fn resolve(&self, relative: &str) -> Result<RepoInfo> {
+        self.resolve(relative).cloned()
+    }
+
+    fn list(&self) -> Result<Vec<RepoInfo>> {
+        Ok(self.list().to_vec())
+    }
+}
+
+impl RepoResolver for DynamicRepoRegistry {
+    fn resolve(&self, relative: &str) -> Result<RepoInfo> {
+        self.repos
+            .read()
+            .expect("dynamic repo registry poisoned")
+            .iter()
+            .find(|repo| repo.relative_path == relative)
+            .cloned()
+            .ok_or_else(|| Error::RepoNotFound(relative.to_string()))
+    }
+
+    fn list(&self) -> Result<Vec<RepoInfo>> {
+        Ok(self
+            .repos
+            .read()
+            .expect("dynamic repo registry poisoned")
+            .clone())
+    }
+}
+
+impl MutableRepoRegistry for DynamicRepoRegistry {
+    fn register(&self, repo: RepoInfo) -> Result<()> {
+        let repo_path = repo.absolute_path.canonicalize()?;
+        let opened = gix::open(&repo_path)?;
+        if !opened.is_bare() {
+            return Err(Error::Protocol(format!(
+                "registered path is not a bare repository: {}",
+                repo_path.display()
+            )));
+        }
+
+        let mut repos = self.repos.write().expect("dynamic repo registry poisoned");
+        if repos
+            .iter()
+            .any(|existing| existing.relative_path == repo.relative_path)
+        {
+            return Err(Error::Protocol(format!(
+                "repository already registered: {}",
+                repo.relative_path
+            )));
+        }
+
+        let mut repo = repo;
+        repo.absolute_path = repo_path;
+        repos.push(repo);
+        repos.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+        Ok(())
+    }
+
+    fn unregister(&self, relative: &str) -> Result<()> {
+        let mut repos = self.repos.write().expect("dynamic repo registry poisoned");
+        let original_len = repos.len();
+        repos.retain(|repo| repo.relative_path != relative);
+        if repos.len() == original_len {
+            return Err(Error::RepoNotFound(relative.to_string()));
+        }
         Ok(())
     }
 }
@@ -290,5 +388,53 @@ mod tests {
 
         assert_eq!(store.list().len(), 2);
         assert!(store.list().iter().any(|repo| repo.name == "beta.git"));
+    }
+
+    #[test]
+    fn dynamic_registry_registers_and_unregisters() {
+        let dir = TempDir::new().unwrap();
+        let repo_path = dir.path().join("alpha.git");
+        create_bare_repo(&repo_path);
+
+        let registry = DynamicRepoRegistry::new();
+        registry
+            .register(RepoInfo {
+                name: "alpha.git".into(),
+                relative_path: "alpha.git".into(),
+                absolute_path: repo_path.clone(),
+                description: None,
+            })
+            .unwrap();
+
+        assert_eq!(registry.list().unwrap().len(), 1);
+        assert_eq!(
+            registry.resolve("alpha.git").unwrap().absolute_path,
+            repo_path.canonicalize().unwrap()
+        );
+
+        registry.unregister("alpha.git").unwrap();
+        assert!(matches!(
+            registry.resolve("alpha.git"),
+            Err(Error::RepoNotFound(_))
+        ));
+    }
+
+    #[test]
+    fn dynamic_registry_rejects_duplicate_registration() {
+        let dir = TempDir::new().unwrap();
+        let repo_path = dir.path().join("alpha.git");
+        create_bare_repo(&repo_path);
+
+        let registry = DynamicRepoRegistry::new();
+        let repo = RepoInfo {
+            name: "alpha.git".into(),
+            relative_path: "alpha.git".into(),
+            absolute_path: repo_path,
+            description: None,
+        };
+
+        registry.register(repo.clone()).unwrap();
+        let err = registry.register(repo).unwrap_err();
+        assert!(matches!(err, Error::Protocol(_)));
     }
 }

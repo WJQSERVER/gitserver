@@ -55,6 +55,10 @@ struct Cli {
     /// Require Bearer authentication with this token.
     #[arg(long)]
     auth_bearer_token: Option<String>,
+
+    /// Enable git-receive-pack and allow push operations.
+    #[arg(long, default_value_t = false)]
+    enable_receive_pack: bool,
 }
 
 #[derive(Clone, clap::ValueEnum)]
@@ -108,7 +112,14 @@ fn main() -> anyhow::Result<()> {
                 .map(|(username, password)| git_server_http::BasicAuthConfig { username, password }),
             bearer_token: cli.auth_bearer_token,
         };
-        let state = git_server_http::SharedState::with_auth(store, auth);
+        let state = git_server_http::SharedState::with_store_and_auth_policy(
+            store,
+            auth,
+            git_server_http::ServicePolicy {
+                receive_pack: cli.enable_receive_pack,
+                ..Default::default()
+            },
+        );
         let app = git_server_http::router(state.clone());
 
         let interval_secs = cli.rescan_interval_secs;

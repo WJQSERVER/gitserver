@@ -20,13 +20,27 @@ impl TestServer {
     /// Start a test server serving repositories discovered under `root`.
     pub async fn start(root: &Path) -> Self {
         let store = RepoStore::discover(root.to_path_buf(), 0).expect("discover repos");
-        let state = git_server_http::SharedState::new(store);
+        let state = git_server_http::SharedState::with_store_and_auth_policy(
+            store,
+            git_server_http::AuthConfig::default(),
+            git_server_http::ServicePolicy {
+                receive_pack: true,
+                ..Default::default()
+            },
+        );
         Self::start_with_state(state).await
     }
 
     pub async fn start_with_auth(root: &Path, auth: git_server_http::AuthConfig) -> Self {
         let store = RepoStore::discover(root.to_path_buf(), 0).expect("discover repos");
-        let state = git_server_http::SharedState::with_auth(store, auth);
+        let state = git_server_http::SharedState::with_store_and_auth_policy(
+            store,
+            auth,
+            git_server_http::ServicePolicy {
+                receive_pack: true,
+                ..Default::default()
+            },
+        );
         Self::start_with_state(state).await
     }
 
