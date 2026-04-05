@@ -771,6 +771,7 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "gix",
+ "gix-pack",
  "miniz_oxide",
  "serde",
  "sha1",

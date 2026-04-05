@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 gix = { workspace = true }
+gix-pack = "0.67.0"
 tokio = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true }
