@@ -11,6 +11,7 @@ pub type SharedState = Arc<RepoStore>;
 pub fn router(store: RepoStore) -> Router {
     let state: SharedState = Arc::new(store);
     Router::new()
+        .route("/healthz", get(handlers::healthz))
         .route("/", get(handlers::list_repos))
         // {*repo_path} is a catch-all; suffixes /info/refs and /git-upload-pack
         // are stripped from the path inside the handler by dispatching via

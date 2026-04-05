@@ -6,6 +6,7 @@ use axum::{
     response::Response,
 };
 use serde::Deserialize;
+use serde::Serialize;
 use tokio::io::AsyncReadExt;
 use tokio_util::io::ReaderStream;
 
@@ -13,9 +14,19 @@ use git_server_core::{backend::GitBackend, discovery::RepoInfo};
 
 use crate::{SharedState, error::AppError};
 
+#[derive(Serialize)]
+pub struct HealthzResponse {
+    status: &'static str,
+}
+
 /// GET / -- list all discovered repositories
 pub async fn list_repos(State(store): State<SharedState>) -> Json<Vec<RepoInfo>> {
     Json(store.list().to_vec())
+}
+
+/// GET /healthz -- lightweight readiness/liveness probe.
+pub async fn healthz() -> Json<HealthzResponse> {
+    Json(HealthzResponse { status: "ok" })
 }
 
 #[derive(Deserialize)]
@@ -285,6 +296,24 @@ mod tests {
         let arr = json.as_array().unwrap();
         assert_eq!(arr.len(), 1);
         assert_eq!(arr[0]["name"], "test.git");
+    }
+
+    #[tokio::test]
+    async fn healthz_returns_ok_json() {
+        let tmp = TempDir::new().unwrap();
+        let store = test_store(&tmp);
+        let app = router(store);
+
+        let response = app
+            .oneshot(Request::builder().uri("/healthz").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["status"], "ok");
     }
 
     #[tokio::test]

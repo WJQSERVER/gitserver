@@ -1058,6 +1058,24 @@ async fn list_repos_endpoint() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn healthz_endpoint_returns_ok() {
+    let root = TempDir::new().unwrap();
+    create_bare_repo_with_commits(root.path(), "alpha.git", 1);
+
+    let server = TestServer::start(root.path()).await;
+
+    let resp = reqwest::get(format!("http://{}/healthz", server.addr))
+        .await
+        .expect("GET /healthz");
+    assert_eq!(resp.status(), 200);
+
+    let json: serde_json::Value = resp.json().await.expect("parse healthz json");
+    assert_eq!(json["status"], "ok");
+
+    server.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn nonexistent_repo_returns_404() {
     let root = TempDir::new().unwrap();
     // Create one repo so the store is non-empty, but we query a different name
