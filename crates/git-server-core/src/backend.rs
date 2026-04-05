@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use tokio::io::AsyncRead;
+use tokio_util::io::SyncIoBridge;
 
 use crate::error::Result;
 use crate::pack::UploadPackRequest;
@@ -26,9 +27,15 @@ impl GitBackend {
         crate::pack::generate_pack(&self.repo_path, request)
     }
 
-    pub async fn receive_pack(&self, request: Vec<u8>) -> Result<Vec<u8>> {
+    pub async fn receive_pack<R>(&self, request: R) -> Result<Vec<u8>>
+    where
+        R: AsyncRead + Unpin + Send + 'static,
+    {
         let repo_path = self.repo_path.clone();
-        tokio::task::spawn_blocking(move || crate::receive_pack::receive_pack(&repo_path, &request))
+        tokio::task::spawn_blocking(move || {
+            let mut request = SyncIoBridge::new(request);
+            crate::receive_pack::receive_pack(&repo_path, &mut request)
+        })
             .await
             .map_err(|e| crate::error::Error::Protocol(format!("receive-pack task panicked: {e}")))?
     }

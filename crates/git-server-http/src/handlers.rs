@@ -1,18 +1,34 @@
 use axum::{
     Json,
-    body::Body,
+    body::{Body, Bytes},
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode, header},
     response::Response,
 };
+use http_body_util::BodyExt;
 use serde::Deserialize;
 use serde::Serialize;
-use tokio::io::AsyncReadExt;
-use tokio_util::io::ReaderStream;
+use tokio_util::io::{ReaderStream, StreamReader};
+use tokio_stream::StreamExt;
 
 use git_server_core::{backend::GitBackend, discovery::RepoInfo};
 
 use crate::{SharedState, error::AppError};
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum ServiceKind {
+    UploadPack,
+    ReceivePack,
+}
+
+impl ServiceKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ServiceKind::UploadPack => "git-upload-pack",
+            ServiceKind::ReceivePack => "git-receive-pack",
+        }
+    }
+}
 
 #[derive(Serialize)]
 pub struct HealthzResponse {
@@ -141,19 +157,42 @@ async fn info_refs_inner(
     headers: HeaderMap,
     query: InfoRefsQuery,
 ) -> Result<Response, AppError> {
-    if query.service != "git-upload-pack" && query.service != "git-receive-pack" {
-        return Err(AppError::BadRequest(format!(
-            "unsupported service: {}",
-            query.service
-        )));
+    let service = match query.service.as_str() {
+        "git-upload-pack" => ServiceKind::UploadPack,
+        "git-receive-pack" => ServiceKind::ReceivePack,
+        _ => {
+            return Err(AppError::BadRequest(format!(
+                "unsupported service: {}",
+                query.service
+            )))
+        }
+    };
+    info_refs_endpoint(store, repo_path, service, headers).await
+}
+
+pub async fn info_refs_endpoint(
+    store: &SharedState,
+    repo_path: &str,
+    service: ServiceKind,
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
+    match service {
+        ServiceKind::UploadPack if !store.policy().upload_pack => {
+            return Err(AppError::NotFound(format!("service disabled: {}", service.as_str())));
+        }
+        ServiceKind::ReceivePack if !store.policy().receive_pack => {
+            return Err(AppError::NotFound(format!("service disabled: {}", service.as_str())));
+        }
+        _ => {}
     }
+
     require_auth(store, &headers)?;
-    let body = if query.service == "git-upload-pack" && is_protocol_v2(&headers) {
+    let body = if service == ServiceKind::UploadPack && is_protocol_v2(&headers) && store.policy().upload_pack_v2 {
         git_server_core::protocol_v2::advertise_capabilities()
     } else {
         let repo_info = store.resolve(repo_path).await?;
         let backend = GitBackend::new(repo_info.absolute_path.clone());
-        if query.service == "git-upload-pack" {
+        if service == ServiceKind::UploadPack {
             backend.advertise_refs()?
         } else {
             let mut body = git_server_core::pktline::encode_comment("service=git-receive-pack");
@@ -166,7 +205,7 @@ async fn info_refs_inner(
         .status(StatusCode::OK)
         .header(
             header::CONTENT_TYPE,
-            format!("application/x-{}-advertisement", query.service),
+            format!("application/x-{}-advertisement", service.as_str()),
         )
         .header(header::CACHE_CONTROL, "no-cache");
 
@@ -187,15 +226,45 @@ async fn info_refs_inner(
 pub async fn rpc_dispatch(
     State(store): State<SharedState>,
     Path(path): Path<String>,
-    headers: HeaderMap,
-    request: axum::body::Bytes,
+    request: axum::extract::Request,
 ) -> Result<Response, AppError> {
+    let (parts, body) = request.into_parts();
+    let headers = parts.headers;
+
     if let Some(repo_path) = strip_path_suffix(&path, "/git-upload-pack") {
-        upload_pack_inner(&store, repo_path, headers, request).await
+        let request = body
+            .collect()
+            .await
+            .map_err(|e| AppError::BadRequest(format!("failed to read upload-pack request: {e}")))?
+            .to_bytes();
+        rpc_endpoint(&store, repo_path, ServiceKind::UploadPack, headers, request).await
     } else if let Some(repo_path) = strip_path_suffix(&path, "/git-receive-pack") {
-        receive_pack_inner(&store, repo_path, headers, request).await
+        receive_pack_streaming_endpoint(&store, repo_path, headers, body).await
     } else {
         Err(AppError::NotFound(format!("not found: /{path}")))
+    }
+}
+
+pub async fn rpc_endpoint(
+    store: &SharedState,
+    repo_path: &str,
+    service: ServiceKind,
+    headers: HeaderMap,
+    request: Bytes,
+) -> Result<Response, AppError> {
+    match service {
+        ServiceKind::UploadPack if !store.policy().upload_pack => {
+            return Err(AppError::NotFound(format!("service disabled: {}", service.as_str())));
+        }
+        ServiceKind::ReceivePack if !store.policy().receive_pack => {
+            return Err(AppError::NotFound(format!("service disabled: {}", service.as_str())));
+        }
+        _ => {}
+    }
+
+    match service {
+        ServiceKind::UploadPack => upload_pack_inner(store, repo_path, headers, request).await,
+        ServiceKind::ReceivePack => receive_pack_inner(store, repo_path, headers, request).await,
     }
 }
 
@@ -203,7 +272,7 @@ async fn upload_pack_inner(
     store: &SharedState,
     repo_path: &str,
     headers: HeaderMap,
-    request: axum::body::Bytes,
+    request: Bytes,
 ) -> Result<Response, AppError> {
     // Validate Content-Type
     let content_type = headers
@@ -241,7 +310,16 @@ async fn receive_pack_inner(
     store: &SharedState,
     repo_path: &str,
     headers: HeaderMap,
-    request: axum::body::Bytes,
+    request: Bytes,
+) -> Result<Response, AppError> {
+    receive_pack_streaming_endpoint(store, repo_path, headers, Body::from(request)).await
+}
+
+async fn receive_pack_streaming_endpoint(
+    store: &SharedState,
+    repo_path: &str,
+    headers: HeaderMap,
+    request_body: Body,
 ) -> Result<Response, AppError> {
     let content_type = headers
         .get(header::CONTENT_TYPE)
@@ -256,7 +334,13 @@ async fn receive_pack_inner(
 
     let repo_info = store.resolve(repo_path).await?;
     let backend = GitBackend::new(repo_info.absolute_path.clone());
-    let body = backend.receive_pack(request.to_vec()).await?;
+    let request_stream = request_body
+        .into_data_stream()
+        .map(|result| result.map_err(std::io::Error::other));
+    let request_reader = StreamReader::new(request_stream);
+    let body = backend
+        .receive_pack(request_reader)
+        .await?;
 
     Ok(Response::builder()
         .status(StatusCode::OK)
@@ -295,13 +379,8 @@ async fn upload_pack_v2(
                     .unwrap());
             }
 
-            let mut reader = backend.upload_pack(&req.upload_request).await.map_err(|e| {
+            let reader = backend.upload_pack(&req.upload_request).await.map_err(|e| {
                 tracing::error!("pack generation failed: {e}");
-                AppError::Internal("internal server error".into())
-            })?;
-            let mut pack = Vec::new();
-            reader.read_to_end(&mut pack).await.map_err(|e| {
-                tracing::error!("failed reading generated pack: {e}");
                 AppError::Internal("internal server error".into())
             })?;
 
@@ -313,13 +392,18 @@ async fn upload_pack_v2(
                 Vec::new()
             };
             body.extend_from_slice(&git_server_core::protocol_v2::encode_shallow_info(&shallow_update));
-            body.extend_from_slice(&git_server_core::protocol_v2::encode_fetch_pack_response(&pack));
+            body.extend_from_slice(&git_server_core::pktline::encode(b"packfile\n"));
 
             Ok(Response::builder()
                 .status(StatusCode::OK)
                 .header(header::CONTENT_TYPE, "application/x-git-upload-pack-result")
                 .header(header::CACHE_CONTROL, "no-cache")
-                .body(Body::from(body))
+                .body(Body::from_stream(ReaderStream::new(
+                    git_server_core::protocol_v2::PrefixThenReader::new(
+                        body,
+                        git_server_core::protocol_v2::PackSectionReader::new(reader),
+                    ),
+                )))
                 .unwrap())
         }
     }
@@ -331,12 +415,12 @@ mod tests {
     use std::process::Command;
 
     use axum::body::Body;
-    use axum::http::{Request, StatusCode, header};
+    use axum::http::{HeaderMap, Request, StatusCode, header};
     use http_body_util::BodyExt;
     use tempfile::TempDir;
     use tower::ServiceExt;
 
-    use git_server_core::discovery::RepoStore;
+    use git_server_core::discovery::{DynamicRepoRegistry, MutableRepoRegistry, RepoInfo, RepoStore};
 
     use crate::router;
 
@@ -537,5 +621,66 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn low_level_info_refs_endpoint_supports_dynamic_registry() {
+        let tmp = TempDir::new().unwrap();
+        let repo_path = tmp.path().join("dynamic.git");
+        create_bare_repo(&repo_path);
+
+        let registry = std::sync::Arc::new(DynamicRepoRegistry::new());
+        registry
+            .register(RepoInfo {
+                name: "dynamic.git".into(),
+                relative_path: "tenant/dynamic.git".into(),
+                absolute_path: repo_path,
+                description: None,
+            })
+            .unwrap();
+
+        let state = crate::SharedState::with_registry(
+            registry,
+            crate::AuthConfig::default(),
+            crate::ServicePolicy {
+                upload_pack: true,
+                upload_pack_v2: true,
+                receive_pack: false,
+            },
+        );
+
+        let response = crate::handlers::info_refs_endpoint(
+            &state,
+            "tenant/dynamic.git",
+            crate::handlers::ServiceKind::UploadPack,
+            HeaderMap::new(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn receive_pack_endpoint_is_disabled_by_default_policy() {
+        let tmp = TempDir::new().unwrap();
+        let store = test_store(&tmp);
+        let app = router(crate::SharedState::with_store_and_auth_policy(
+            store,
+            crate::AuthConfig::default(),
+            crate::ServicePolicy::default(),
+        ));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/test.git/info/refs?service=git-receive-pack")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 }

@@ -1,5 +1,6 @@
 mod helpers;
 
+use git_server_core::discovery::MutableRepoRegistry;
 use std::io::Read;
 use std::path::Path;
 use std::process::Command;
@@ -777,6 +778,49 @@ async fn git_fetch_works_over_protocol_v2() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn protocol_v2_fetch_streams_packfile_section() {
+    let root = TempDir::new().unwrap();
+    create_bare_repo_with_commits(root.path(), "v2.git", 2);
+    let server = TestServer::start(root.path()).await;
+
+    let client_dir = TempDir::new().unwrap();
+    let client_path = client_dir.path();
+    let init = Command::new("git")
+        .args(["init", client_path.to_str().unwrap()])
+        .output()
+        .expect("git init");
+    assert!(init.status.success(), "git init failed: {:?}", init);
+
+    let head_oid = repo_head_oid(&root.path().join("v2.git"));
+    let mut body = Vec::new();
+    body.extend_from_slice(&make_pktline("command=fetch\n"));
+    body.extend_from_slice(&make_pktline("object-format=sha1\n"));
+    body.extend_from_slice(b"0001");
+    body.extend_from_slice(&make_pktline("ofs-delta\n"));
+    body.extend_from_slice(&make_pktline(&format!("want {head_oid}\n")));
+    body.extend_from_slice(&make_pktline("done\n"));
+    body.extend_from_slice(b"0000");
+
+    let response = reqwest::Client::new()
+        .post(server.url("v2.git/git-upload-pack"))
+        .header("Git-Protocol", "version=2")
+        .header("content-type", "application/x-git-upload-pack-request")
+        .body(body)
+        .send()
+        .await
+        .expect("POST protocol v2 fetch");
+
+    assert_eq!(response.status(), 200);
+    assert_eq!(
+        response.content_length(),
+        None,
+        "streamed v2 fetch responses should not advertise a fixed content length"
+    );
+
+    server.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn git_ls_remote_works_over_protocol_v2() {
     let root = TempDir::new().unwrap();
     create_bare_repo_with_commits(root.path(), "v2.git", 1);
@@ -1356,6 +1400,99 @@ async fn repository_list_hot_reloads_after_new_repo_appears() {
     assert_eq!(info_refs.status(), 200);
 
     server.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn dynamic_registry_can_register_and_unregister_repo_paths() {
+    let root = TempDir::new().unwrap();
+    let repo_path = create_bare_repo_with_commits(root.path(), "dynamic.git", 1);
+    let registry = std::sync::Arc::new(git_server_core::discovery::DynamicRepoRegistry::new());
+    let state = git_server_http::SharedState::with_registry(
+        registry.clone(),
+        git_server_http::AuthConfig::default(),
+        git_server_http::ServicePolicy {
+            upload_pack: true,
+            upload_pack_v2: true,
+            receive_pack: false,
+        },
+    );
+
+    registry
+        .register(git_server_core::discovery::RepoInfo {
+            name: "dynamic.git".into(),
+            relative_path: "tenant/dynamic.git".into(),
+            absolute_path: repo_path,
+            description: None,
+        })
+        .unwrap();
+
+    let router = git_server_http::router(state.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+    let handle = tokio::spawn(async move {
+        axum::serve(listener, router)
+            .with_graceful_shutdown(async {
+                let _ = shutdown_rx.await;
+            })
+            .await
+            .unwrap();
+    });
+
+    let response = reqwest::get(format!(
+        "http://{addr}/tenant/dynamic.git/info/refs?service=git-upload-pack"
+    ))
+    .await
+    .expect("GET dynamic repo info/refs");
+    assert_eq!(response.status(), 200);
+
+    state.unregister_repo("tenant/dynamic.git").unwrap();
+
+    let response = reqwest::get(format!(
+        "http://{addr}/tenant/dynamic.git/info/refs?service=git-upload-pack"
+    ))
+    .await
+    .expect("GET unregistered repo info/refs");
+    assert_eq!(response.status(), 404);
+
+    let _ = shutdown_tx.send(());
+    handle.await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn receive_pack_is_disabled_by_default_policy() {
+    let root = TempDir::new().unwrap();
+    create_bare_repo_with_commits(root.path(), "readonly.git", 1);
+
+    let store = git_server_core::discovery::RepoStore::discover(root.path().to_path_buf(), 0).unwrap();
+    let state = git_server_http::SharedState::with_store_and_auth_policy(
+        store,
+        git_server_http::AuthConfig::default(),
+        git_server_http::ServicePolicy::default(),
+    );
+
+    let router = git_server_http::router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+    let handle = tokio::spawn(async move {
+        axum::serve(listener, router)
+            .with_graceful_shutdown(async {
+                let _ = shutdown_rx.await;
+            })
+            .await
+            .unwrap();
+    });
+
+    let response = reqwest::get(format!(
+        "http://{addr}/readonly.git/info/refs?service=git-receive-pack"
+    ))
+    .await
+    .expect("GET receive-pack advertisement");
+    assert_eq!(response.status(), 404);
+
+    let _ = shutdown_tx.send(());
+    handle.await.unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread")]

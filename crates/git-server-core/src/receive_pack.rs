@@ -1,4 +1,4 @@
-use std::io::{BufReader, Cursor};
+use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
@@ -59,10 +59,10 @@ pub fn advertise_receive_refs(repo_path: &Path) -> Result<Vec<u8>> {
     Ok(out)
 }
 
-pub fn receive_pack(repo_path: &Path, request: &[u8]) -> Result<Vec<u8>> {
+pub fn receive_pack<R: Read>(repo_path: &Path, request: R) -> Result<Vec<u8>> {
     let repo = gix::open(repo_path)?;
-    let parsed = parse_request(request)?;
-    let status = apply_commands(&repo, repo_path, &parsed)?;
+    let mut parsed = parse_request(request)?;
+    let status = apply_commands(&repo, repo_path, &mut parsed)?;
     Ok(encode_report_status(&parsed.capabilities, &status))
 }
 
@@ -72,9 +72,9 @@ struct ReceivePackCapabilities {
     report_status_v2: bool,
 }
 
-struct ReceivePackRequest {
+struct ReceivePackRequest<R> {
     commands: Vec<UpdateCommand>,
-    pack: Vec<u8>,
+    pack: R,
     capabilities: ReceivePackCapabilities,
 }
 
@@ -89,15 +89,21 @@ enum CommandStatus {
     Ng(String, String),
 }
 
-fn parse_request(request: &[u8]) -> Result<ReceivePackRequest> {
-    let mut pos = 0;
+fn parse_request<R: Read>(request: R) -> Result<ReceivePackRequest<BufReader<R>>> {
+    let mut request = BufReader::new(request);
     let mut commands = Vec::new();
     let mut capabilities = ReceivePackCapabilities::default();
 
-    while pos + 4 <= request.len() {
-        let len_str = std::str::from_utf8(&request[pos..pos + 4])
+    loop {
+        let mut prefix = [0u8; 4];
+        match request.read_exact(&mut prefix) {
+            Ok(()) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => break,
+            Err(err) => return Err(Error::Io(err)),
+        }
+
+        let len_str = std::str::from_utf8(&prefix)
             .map_err(|_| Error::Protocol("invalid pkt-line length prefix".into()))?;
-        pos += 4;
 
         if len_str == "0000" {
             break;
@@ -105,18 +111,18 @@ fn parse_request(request: &[u8]) -> Result<ReceivePackRequest> {
 
         let len = usize::from_str_radix(len_str, 16)
             .map_err(|_| Error::Protocol("invalid pkt-line length".into()))?;
-        if len < 4 || pos + (len - 4) > request.len() {
+        if len < 4 {
             return Err(Error::Protocol("invalid pkt-line frame length".into()));
         }
 
-        let payload = &request[pos..pos + (len - 4)];
-        pos += len - 4;
+        let mut payload = vec![0u8; len - 4];
+        request.read_exact(&mut payload)?;
 
         let (command_bytes, capability_bytes) =
             if let Some(nul) = payload.iter().position(|b| *b == 0) {
                 (&payload[..nul], Some(&payload[nul + 1..]))
             } else {
-                (payload, None)
+                (&payload[..], None)
             };
 
         if let Some(capability_bytes) = capability_bytes {
@@ -154,18 +160,18 @@ fn parse_request(request: &[u8]) -> Result<ReceivePackRequest> {
 
     Ok(ReceivePackRequest {
         commands,
-        pack: request[pos..].to_vec(),
+        pack: request,
         capabilities,
     })
 }
 
-fn apply_commands(
+fn apply_commands<R: BufRead>(
     repo: &gix::Repository,
     repo_path: &Path,
-    request: &ReceivePackRequest,
+    request: &mut ReceivePackRequest<R>,
 ) -> Result<Vec<CommandStatus>> {
-    if !request.pack.is_empty() {
-        write_pack(repo_path, &request.pack)?;
+    if request.pack.fill_buf().map(|buf: &[u8]| !buf.is_empty())? {
+        write_pack(repo_path, &mut request.pack)?;
     }
 
     let mut statuses = Vec::with_capacity(request.commands.len());
@@ -178,16 +184,11 @@ fn apply_commands(
     Ok(statuses)
 }
 
-fn write_pack(repo_path: &Path, pack: &[u8]) -> Result<()> {
-    if pack.is_empty() {
-        return Ok(());
-    }
-
-    let mut reader = BufReader::new(Cursor::new(pack));
+fn write_pack<R: BufRead>(repo_path: &Path, pack: &mut R) -> Result<()> {
     let mut progress = Discard;
     let interrupt = AtomicBool::new(false);
     let outcome = gix_pack::Bundle::write_to_directory(
-        &mut reader,
+        pack,
         Some(repo_path.join("objects/pack").as_path()),
         &mut progress,
         &interrupt,
@@ -408,10 +409,13 @@ mod tests {
         body.extend_from_slice(payload);
         body.extend_from_slice(b"0000PACK");
 
-        let parsed = parse_request(&body).unwrap();
+        let parsed = parse_request(std::io::Cursor::new(&body)).unwrap();
         assert_eq!(parsed.commands.len(), 1);
         assert!(parsed.capabilities.report_status);
         assert!(parsed.capabilities.report_status_v2);
-        assert_eq!(parsed.pack, b"PACK");
+        let mut pack = String::new();
+        let mut reader = parsed.pack;
+        reader.read_to_string(&mut pack).unwrap();
+        assert_eq!(pack.as_bytes(), b"PACK");
     }
 }

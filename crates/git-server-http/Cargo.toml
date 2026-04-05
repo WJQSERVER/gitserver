@@ -13,7 +13,9 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tokio-util = { version = "0.7", features = ["io"] }
+tokio-util = { version = "0.7", features = ["io", "io-util"] }
+http-body-util = "0.1"
+tokio-stream = "0.1"
 flate2 = "1"
 zstd = "0.13"
 base64 = "0.22"
@@ -23,6 +25,5 @@ gix = { workspace = true }
 gix-pack = "0.67.0"
 tempfile = "3"
 tokio = { workspace = true, features = ["test-util"] }
-http-body-util = "0.1"
 tower = { version = "0.5", features = ["util"] }
 reqwest = { version = "0.12", features = ["json", "gzip", "zstd"] }

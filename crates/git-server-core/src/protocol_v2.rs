@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 use std::collections::HashSet;
+use std::io::Cursor;
 use std::path::Path;
 
 use crate::error::{Error, Result};
@@ -167,6 +168,144 @@ pub fn encode_fetch_pack_response(pack_bytes: &[u8]) -> Vec<u8> {
     }
 
     out
+}
+
+pub struct PrefixThenReader<R> {
+    prefix: Cursor<Vec<u8>>,
+    reader: R,
+}
+
+impl<R> PrefixThenReader<R> {
+    pub fn new(prefix: Vec<u8>, reader: R) -> Self {
+        Self {
+            prefix: Cursor::new(prefix),
+            reader,
+        }
+    }
+}
+
+pub struct PackSectionReader<R> {
+    reader: R,
+    buf: Vec<u8>,
+    out: Cursor<Vec<u8>>,
+    finished: bool,
+}
+
+impl<R> PackSectionReader<R> {
+    pub fn new(reader: R) -> Self {
+        Self {
+            reader,
+            buf: Vec::new(),
+            out: Cursor::new(Vec::new()),
+            finished: false,
+        }
+    }
+}
+
+impl<R: tokio::io::AsyncRead + Unpin> tokio::io::AsyncRead for PackSectionReader<R> {
+    fn poll_read(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        loop {
+            if (self.out.position() as usize) < self.out.get_ref().len() {
+                let remaining = &self.out.get_ref()[self.out.position() as usize..];
+                let to_copy = remaining.len().min(buf.remaining());
+                buf.put_slice(&remaining[..to_copy]);
+                let next = self.out.position() + to_copy as u64;
+                self.out.set_position(next);
+                return std::task::Poll::Ready(Ok(()));
+            }
+
+            if self.finished {
+                return std::task::Poll::Ready(Ok(()));
+            }
+
+            let mut frame_buf = [0u8; 8192];
+            let mut read_buf = tokio::io::ReadBuf::new(&mut frame_buf);
+            match std::pin::Pin::new(&mut self.reader).poll_read(cx, &mut read_buf) {
+                std::task::Poll::Pending => return std::task::Poll::Pending,
+                std::task::Poll::Ready(Err(err)) => return std::task::Poll::Ready(Err(err)),
+                std::task::Poll::Ready(Ok(())) => {
+                    let filled = read_buf.filled();
+                    if filled.is_empty() {
+                        self.finished = true;
+                        return std::task::Poll::Ready(Ok(()));
+                    }
+                    self.buf.extend_from_slice(filled);
+                }
+            }
+
+            let mut emitted = Vec::new();
+            loop {
+                if self.buf.len() < 4 {
+                    break;
+                }
+                let len_str = match std::str::from_utf8(&self.buf[..4]) {
+                    Ok(v) => v,
+                    Err(_) => {
+                        self.finished = true;
+                        return std::task::Poll::Ready(Err(std::io::Error::other(
+                            "invalid pkt-line prefix in pack response",
+                        )));
+                    }
+                };
+
+                if len_str == "0000" {
+                    emitted.extend_from_slice(b"0000");
+                    self.buf.drain(..4);
+                    self.finished = true;
+                    break;
+                }
+
+                let len = match usize::from_str_radix(len_str, 16) {
+                    Ok(v) if v >= 4 => v,
+                    _ => {
+                        self.finished = true;
+                        return std::task::Poll::Ready(Err(std::io::Error::other(
+                            "invalid pkt-line length in pack response",
+                        )));
+                    }
+                };
+
+                if self.buf.len() < len {
+                    break;
+                }
+
+                let frame = self.buf[..len].to_vec();
+                let payload = &frame[4..];
+                if payload.starts_with(&[0x01]) || payload.starts_with(&[0x02]) || payload.starts_with(&[0x03]) {
+                    emitted.extend_from_slice(&frame);
+                }
+                self.buf.drain(..len);
+            }
+
+            if !emitted.is_empty() {
+                self.out = Cursor::new(emitted);
+                self.out.set_position(0);
+            }
+        }
+    }
+}
+
+impl<R: tokio::io::AsyncRead + Unpin> tokio::io::AsyncRead for PrefixThenReader<R> {
+    fn poll_read(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        if (self.prefix.position() as usize) < self.prefix.get_ref().len() {
+            let remaining = &self.prefix.get_ref()[self.prefix.position() as usize..];
+            let to_copy = remaining.len().min(buf.remaining());
+            buf.put_slice(&remaining[..to_copy]);
+            let next = self.prefix.position() + to_copy as u64;
+            self.prefix.set_position(next);
+            return std::task::Poll::Ready(Ok(()));
+        }
+
+        std::pin::Pin::new(&mut self.reader).poll_read(cx, buf)
+    }
 }
 
 pub fn encode_fetch_ready_and_acknowledgments(common: &[gix::ObjectId]) -> Vec<u8> {
