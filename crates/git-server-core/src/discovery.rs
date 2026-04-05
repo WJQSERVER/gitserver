@@ -114,11 +114,11 @@ impl RepoStore {
 
 impl RepoResolver for RepoStore {
     fn resolve(&self, relative: &str) -> Result<RepoInfo> {
-        self.resolve(relative).cloned()
+        RepoStore::resolve(self, relative).cloned()
     }
 
     fn list(&self) -> Result<Vec<RepoInfo>> {
-        Ok(self.list().to_vec())
+        Ok(RepoStore::list(self).to_vec())
     }
 }
 
