@@ -43,6 +43,18 @@ struct Cli {
     /// Periodically rescan repositories to pick up additions/removals.
     #[arg(long, default_value_t = 30)]
     rescan_interval_secs: u64,
+
+    /// Require HTTP Basic auth with this username.
+    #[arg(long, requires = "auth_basic_password")]
+    auth_basic_username: Option<String>,
+
+    /// Require HTTP Basic auth with this password.
+    #[arg(long, requires = "auth_basic_username")]
+    auth_basic_password: Option<String>,
+
+    /// Require Bearer authentication with this token.
+    #[arg(long)]
+    auth_bearer_token: Option<String>,
 }
 
 #[derive(Clone, clap::ValueEnum)]
@@ -89,7 +101,14 @@ fn main() -> anyhow::Result<()> {
     let runtime = builder.build()?;
 
     runtime.block_on(async {
-        let state = git_server_http::SharedState::new(store);
+        let auth = git_server_http::AuthConfig {
+            basic: cli
+                .auth_basic_username
+                .zip(cli.auth_basic_password)
+                .map(|(username, password)| git_server_http::BasicAuthConfig { username, password }),
+            bearer_token: cli.auth_bearer_token,
+        };
+        let state = git_server_http::SharedState::with_auth(store, auth);
         let app = git_server_http::router(state.clone());
 
         let interval_secs = cli.rescan_interval_secs;

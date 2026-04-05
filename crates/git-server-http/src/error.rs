@@ -1,6 +1,6 @@
 use axum::{
     Json,
-    http::StatusCode,
+    http::{HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
 };
 use serde::Serialize;
@@ -11,6 +11,7 @@ use git_server_core::error::Error as CoreError;
 pub enum AppError {
     NotFound(String),
     BadRequest(String),
+    Unauthorized,
     Internal(String),
 }
 
@@ -22,20 +23,34 @@ struct ErrorBody {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
+        let unauthorized = matches!(self, Self::Unauthorized);
         let (status, error_code, message) = match self {
             Self::NotFound(msg) => (StatusCode::NOT_FOUND, "not_found", msg),
             Self::BadRequest(msg) => (StatusCode::BAD_REQUEST, "bad_request", msg),
+            Self::Unauthorized => (
+                StatusCode::UNAUTHORIZED,
+                "unauthorized",
+                "authentication required".to_string(),
+            ),
             Self::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, "internal_error", msg),
         };
-
-        (
+        let mut response = (
             status,
             Json(ErrorBody {
                 error: error_code,
                 message,
             }),
         )
-            .into_response()
+            .into_response();
+
+        if unauthorized {
+            response.headers_mut().insert(
+                header::WWW_AUTHENTICATE,
+                HeaderValue::from_static("Basic realm=\"git-server\", Bearer"),
+            );
+        }
+
+        response
     }
 }
 
@@ -96,5 +111,16 @@ mod tests {
         let json = read_body_json(response.into_body()).await;
         assert_eq!(json["error"], "internal_error");
         assert_eq!(json["message"], "something went wrong");
+    }
+
+    #[tokio::test]
+    async fn unauthorized_returns_401_json() {
+        let err = AppError::Unauthorized;
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert!(response.headers().contains_key(header::WWW_AUTHENTICATE));
+
+        let json = read_body_json(response.into_body()).await;
+        assert_eq!(json["error"], "unauthorized");
     }
 }

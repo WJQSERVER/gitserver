@@ -90,6 +90,39 @@ fn compress_info_refs(body: Vec<u8>, encoding: CompressionEncoding) -> Result<(V
     }
 }
 
+fn require_auth(store: &SharedState, headers: &HeaderMap) -> Result<(), AppError> {
+    let auth = store.auth();
+    if auth.basic.is_none() && auth.bearer_token.is_none() {
+        return Ok(());
+    }
+
+    let Some(value) = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+    else {
+        return Err(AppError::Unauthorized);
+    };
+
+    if let Some(token) = value.strip_prefix("Bearer ")
+        && auth.bearer_token.as_deref() == Some(token)
+    {
+        return Ok(());
+    }
+
+    if let Some(encoded) = value.strip_prefix("Basic ")
+        && let Some(config) = &auth.basic
+    {
+        let decoded = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, encoded)
+            .map_err(|_| AppError::Unauthorized)?;
+        let decoded = String::from_utf8(decoded).map_err(|_| AppError::Unauthorized)?;
+        if decoded == format!("{}:{}", config.username, config.password) {
+            return Ok(());
+        }
+    }
+
+    Err(AppError::Unauthorized)
+}
+
 /// GET /{*path} -- dispatches to info_refs when path ends with /info/refs
 pub async fn info_refs_dispatch(
     State(store): State<SharedState>,
@@ -114,6 +147,7 @@ async fn info_refs_inner(
             query.service
         )));
     }
+    require_auth(store, &headers)?;
     let body = if is_protocol_v2(&headers) {
         git_server_core::protocol_v2::advertise_capabilities()
     } else {
@@ -170,6 +204,7 @@ async fn upload_pack_inner(
             "invalid content type: expected application/x-git-upload-pack-request, got {content_type}"
         )));
     }
+    require_auth(store, &headers)?;
     let repo_info = store.resolve(repo_path).await?;
     let backend = GitBackend::new(repo_info.absolute_path.clone());
 
@@ -256,7 +291,7 @@ mod tests {
     use std::process::Command;
 
     use axum::body::Body;
-    use axum::http::{Request, StatusCode};
+    use axum::http::{Request, StatusCode, header};
     use http_body_util::BodyExt;
     use tempfile::TempDir;
     use tower::ServiceExt;
@@ -405,5 +440,62 @@ mod tests {
         let bytes = response.into_body().collect().await.unwrap().to_bytes();
         let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(json["error"], "bad_request");
+    }
+
+    #[tokio::test]
+    async fn info_refs_requires_auth_when_configured() {
+        let tmp = TempDir::new().unwrap();
+        let store = test_store(&tmp);
+        let state = crate::SharedState::with_auth(
+            store,
+            crate::AuthConfig {
+                basic: Some(crate::BasicAuthConfig {
+                    username: "alice".into(),
+                    password: "secret".into(),
+                }),
+                bearer_token: None,
+            },
+        );
+        let app = router(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/test.git/info/refs?service=git-upload-pack")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert!(response.headers().contains_key(header::WWW_AUTHENTICATE));
+    }
+
+    #[tokio::test]
+    async fn info_refs_accepts_bearer_auth_when_configured() {
+        let tmp = TempDir::new().unwrap();
+        let store = test_store(&tmp);
+        let state = crate::SharedState::with_auth(
+            store,
+            crate::AuthConfig {
+                basic: None,
+                bearer_token: Some("token-123".into()),
+            },
+        );
+        let app = router(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/test.git/info/refs?service=git-upload-pack")
+                    .header(header::AUTHORIZATION, "Bearer token-123")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
     }
 }

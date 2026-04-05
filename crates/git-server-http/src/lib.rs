@@ -7,15 +7,33 @@ use axum::{Router, routing::get, routing::post};
 use git_server_core::discovery::RepoStore;
 use tokio::sync::RwLock;
 
+#[derive(Clone, Default)]
+pub struct AuthConfig {
+    pub basic: Option<BasicAuthConfig>,
+    pub bearer_token: Option<String>,
+}
+
+#[derive(Clone)]
+pub struct BasicAuthConfig {
+    pub username: String,
+    pub password: String,
+}
+
 #[derive(Clone)]
 pub struct SharedState {
     store: Arc<RwLock<RepoStore>>,
+    auth: AuthConfig,
 }
 
 impl SharedState {
     pub fn new(store: RepoStore) -> Self {
+        Self::with_auth(store, AuthConfig::default())
+    }
+
+    pub fn with_auth(store: RepoStore, auth: AuthConfig) -> Self {
         Self {
             store: Arc::new(RwLock::new(store)),
+            auth,
         }
     }
 
@@ -32,6 +50,10 @@ impl SharedState {
 
     pub async fn refresh(&self) -> git_server_core::error::Result<()> {
         self.store.write().await.refresh()
+    }
+
+    pub fn auth(&self) -> &AuthConfig {
+        &self.auth
     }
 }
 

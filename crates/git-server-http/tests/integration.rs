@@ -1076,6 +1076,105 @@ async fn healthz_endpoint_returns_ok() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn info_refs_requires_authentication_when_configured() {
+    let root = TempDir::new().unwrap();
+    create_bare_repo_with_commits(root.path(), "secure.git", 1);
+
+    let server = TestServer::start_with_auth(
+        root.path(),
+        git_server_http::AuthConfig {
+            basic: Some(git_server_http::BasicAuthConfig {
+                username: "alice".into(),
+                password: "secret".into(),
+            }),
+            bearer_token: Some("token-123".into()),
+        },
+    )
+    .await;
+
+    let resp = reqwest::get(format!(
+        "{}/info/refs?service=git-upload-pack",
+        server.url("secure.git")
+    ))
+    .await
+    .expect("GET secure info/refs");
+    assert_eq!(resp.status(), 401);
+
+    server.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn info_refs_accepts_bearer_authentication() {
+    let root = TempDir::new().unwrap();
+    create_bare_repo_with_commits(root.path(), "secure.git", 1);
+
+    let server = TestServer::start_with_auth(
+        root.path(),
+        git_server_http::AuthConfig {
+            basic: None,
+            bearer_token: Some("token-123".into()),
+        },
+    )
+    .await;
+
+    let resp = reqwest::Client::new()
+        .get(format!(
+            "{}/info/refs?service=git-upload-pack",
+            server.url("secure.git")
+        ))
+        .header("Authorization", "Bearer token-123")
+        .send()
+        .await
+        .expect("GET secure info/refs with bearer");
+    assert_eq!(resp.status(), 200);
+
+    server.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn git_clone_works_with_basic_authentication() {
+    let root = TempDir::new().unwrap();
+    create_bare_repo_with_commits(root.path(), "secure.git", 2);
+
+    let server = TestServer::start_with_auth(
+        root.path(),
+        git_server_http::AuthConfig {
+            basic: Some(git_server_http::BasicAuthConfig {
+                username: "alice".into(),
+                password: "secret".into(),
+            }),
+            bearer_token: None,
+        },
+    )
+    .await;
+
+    let clone_dir = TempDir::new().unwrap();
+    let clone_path = clone_dir.path().join("secure-clone");
+    let authed_url = format!("http://alice:secret@{}/secure.git", server.addr);
+
+    let output = tokio::task::spawn_blocking({
+        let clone_path = clone_path.clone();
+        move || {
+            Command::new("git")
+                .args(["clone", &authed_url, clone_path.to_str().unwrap()])
+                .output()
+                .expect("git clone with basic auth")
+        }
+    })
+    .await
+    .unwrap();
+
+    assert!(
+        output.status.success(),
+        "git clone with auth failed: stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+
+    server.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn repository_list_hot_reloads_after_new_repo_appears() {
     let root = TempDir::new().unwrap();
     create_bare_repo_with_commits(root.path(), "alpha.git", 1);

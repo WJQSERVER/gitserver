@@ -21,6 +21,16 @@ impl TestServer {
     pub async fn start(root: &Path) -> Self {
         let store = RepoStore::discover(root.to_path_buf(), 0).expect("discover repos");
         let state = git_server_http::SharedState::new(store);
+        Self::start_with_state(state).await
+    }
+
+    pub async fn start_with_auth(root: &Path, auth: git_server_http::AuthConfig) -> Self {
+        let store = RepoStore::discover(root.to_path_buf(), 0).expect("discover repos");
+        let state = git_server_http::SharedState::with_auth(store, auth);
+        Self::start_with_state(state).await
+    }
+
+    async fn start_with_state(state: git_server_http::SharedState) -> Self {
         let router = git_server_http::router(state.clone());
 
         let listener = TcpListener::bind("127.0.0.1:0")
