@@ -1492,12 +1492,17 @@ async fn git_delete_push_is_rejected_by_ref_update_validation() {
         String::from_utf8_lossy(&delete.stdout),
         String::from_utf8_lossy(&delete.stderr),
     );
+
+    let remote_head = Command::new("git")
+        .args(["rev-parse", "refs/heads/main"])
+        .current_dir(root.path().join("push.git"))
+        .output()
+        .expect("git rev-parse bare head after delete push");
     assert!(
-        String::from_utf8_lossy(&delete.stderr).contains("remote rejected")
-            || String::from_utf8_lossy(&delete.stderr).contains("无法推送")
-            || String::from_utf8_lossy(&delete.stderr).contains("拒绝"),
-        "expected delete rejection message, got: {}",
-        String::from_utf8_lossy(&delete.stderr)
+        remote_head.status.success(),
+        "main branch should still exist after rejected delete push: stdout={}, stderr={}",
+        String::from_utf8_lossy(&remote_head.stdout),
+        String::from_utf8_lossy(&remote_head.stderr),
     );
 
     server.stop().await;
