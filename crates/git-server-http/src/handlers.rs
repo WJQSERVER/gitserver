@@ -8,6 +8,7 @@ use axum::{
 use http_body_util::BodyExt;
 use serde::Deserialize;
 use serde::Serialize;
+use subtle::ConstantTimeEq;
 use tokio_stream::StreamExt;
 use tokio_util::io::{ReaderStream, StreamReader};
 
@@ -134,8 +135,8 @@ fn require_auth(store: &SharedState, headers: &HeaderMap) -> Result<(), AppError
     {
         let decoded = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, encoded)
             .map_err(|_| AppError::Unauthorized)?;
-        let decoded = String::from_utf8(decoded).map_err(|_| AppError::Unauthorized)?;
-        if decoded == format!("{}:{}", config.username, config.password) {
+        let expected = format!("{}:{}", config.username, config.password);
+        if decoded.len() == expected.len() && decoded.as_slice().ct_eq(expected.as_bytes()).into() {
             return Ok(());
         }
     }

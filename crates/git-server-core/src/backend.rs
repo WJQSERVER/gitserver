@@ -1,10 +1,80 @@
 use std::path::PathBuf;
+use std::pin::Pin;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::task::{Context, Poll};
 
 use tokio::io::AsyncRead;
+use tokio::time::{Duration, Sleep, sleep};
 use tokio_util::io::SyncIoBridge;
 
 use crate::error::Result;
 use crate::pack::UploadPackRequest;
+
+pub const RECEIVE_PACK_TIMEOUT: Duration = Duration::from_secs(300);
+const RECEIVE_PACK_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+
+struct TimedAsyncRead<R> {
+    inner: R,
+    timeout: Duration,
+    sleep: Option<Pin<Box<Sleep>>>,
+    interrupt: Arc<AtomicBool>,
+}
+
+impl<R> TimedAsyncRead<R> {
+    fn new(inner: R, timeout: Duration, interrupt: Arc<AtomicBool>) -> Self {
+        Self {
+            inner,
+            timeout,
+            sleep: None,
+            interrupt,
+        }
+    }
+}
+
+impl<R> AsyncRead for TimedAsyncRead<R>
+where
+    R: AsyncRead + Unpin,
+{
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        if self.sleep.is_none() {
+            self.sleep = Some(Box::pin(sleep(self.timeout)));
+        }
+
+        let before = buf.filled().len();
+        match Pin::new(&mut self.inner).poll_read(cx, buf) {
+            Poll::Ready(Ok(())) => {
+                if buf.filled().len() > before {
+                    self.sleep = None;
+                }
+                Poll::Ready(Ok(()))
+            }
+            Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
+            Poll::Pending => {
+                if self
+                    .sleep
+                    .as_mut()
+                    .expect("timeout sleep must exist")
+                    .as_mut()
+                    .poll(cx)
+                    .is_ready()
+                {
+                    self.interrupt.store(true, Ordering::Relaxed);
+                    Poll::Ready(Err(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "receive-pack read timed out",
+                    )))
+                } else {
+                    Poll::Pending
+                }
+            }
+        }
+    }
+}
 
 pub struct GitBackend {
     repo_path: PathBuf,
@@ -31,13 +101,41 @@ impl GitBackend {
     where
         R: AsyncRead + Unpin + Send + 'static,
     {
+        self.receive_pack_with_timeout(request, RECEIVE_PACK_TIMEOUT)
+            .await
+    }
+
+    async fn receive_pack_with_timeout<R>(
+        &self,
+        request: R,
+        timeout_duration: Duration,
+    ) -> Result<Vec<u8>>
+    where
+        R: AsyncRead + Unpin + Send + 'static,
+    {
         let repo_path = self.repo_path.clone();
-        tokio::task::spawn_blocking(move || {
+        let interrupt = Arc::new(AtomicBool::new(false));
+        let watchdog_interrupt = interrupt.clone();
+        let watchdog = tokio::spawn(async move {
+            sleep(timeout_duration).await;
+            watchdog_interrupt.store(true, Ordering::Relaxed);
+        });
+
+        let join = tokio::task::spawn_blocking(move || {
+            let request =
+                TimedAsyncRead::new(request, RECEIVE_PACK_IDLE_TIMEOUT, interrupt.clone());
             let mut request = SyncIoBridge::new(request);
-            crate::receive_pack::receive_pack(&repo_path, &mut request)
+            crate::receive_pack::receive_pack_with_interrupt(
+                &repo_path,
+                &mut request,
+                interrupt.as_ref(),
+            )
         })
         .await
-        .map_err(|e| crate::error::Error::Protocol(format!("receive-pack task panicked: {e}")))?
+        .map_err(|e| crate::error::Error::Protocol(format!("receive-pack task panicked: {e}")));
+
+        watchdog.abort();
+        join?
     }
 }
 
@@ -117,5 +215,25 @@ mod tests {
             .await
             .unwrap();
         assert!(buf.windows(4).any(|w| w == b"PACK"));
+    }
+
+    #[tokio::test]
+    async fn backend_receive_pack_times_out_on_stalled_reader() {
+        let root = TempDir::new().unwrap();
+        let repo_path = create_repo_with_commit(root.path());
+        let backend = GitBackend::new(repo_path);
+        let (reader, _writer) = tokio::io::duplex(1);
+
+        let err = backend
+            .receive_pack_with_timeout(reader, Duration::from_millis(50))
+            .await
+            .unwrap_err();
+
+        match err {
+            crate::error::Error::Io(inner) => {
+                assert_eq!(inner.kind(), std::io::ErrorKind::TimedOut);
+            }
+            other => panic!("expected timeout io error, got {other}"),
+        }
     }
 }

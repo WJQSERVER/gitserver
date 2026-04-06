@@ -486,26 +486,28 @@ async fn upload_pack_streams_large_responses() {
         "streamed upload-pack responses should not advertise a fixed content length"
     );
 
-    let first_chunk = response
-        .chunk()
-        .await
-        .expect("read first response chunk")
-        .expect("expected first response chunk");
+    let mut body = Vec::new();
+    let mut chunk_count = 0;
+    while body.len() < 8 {
+        let chunk = response
+            .chunk()
+            .await
+            .expect("read response chunk")
+            .expect("expected response chunk");
+        chunk_count += 1;
+        body.extend_from_slice(&chunk);
+    }
     assert!(
-        first_chunk.starts_with(b"0008NAK\n"),
+        body.starts_with(b"0008NAK\n"),
         "streamed response should start with upload-pack preamble"
     );
-
-    let mut body = first_chunk.to_vec();
-    let mut chunk_count = 1;
     while let Some(chunk) = response.chunk().await.expect("read response chunk") {
         chunk_count += 1;
         body.extend_from_slice(&chunk);
     }
-
     assert!(
         chunk_count > 1,
-        "large pack responses should be readable incrementally"
+        "large pack responses should remain incrementally readable"
     );
     assert!(
         body.windows(4).any(|window| window == b"PACK"),
@@ -1552,6 +1554,118 @@ async fn git_push_annotated_tag_works_over_http_receive_pack() {
         "git push tag failed: stdout={}, stderr={}",
         String::from_utf8_lossy(&push.stdout),
         String::from_utf8_lossy(&push.stderr),
+    );
+
+    server.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn preflight_rejected_multi_ref_push_does_not_partially_apply_updates() {
+    let root = TempDir::new().unwrap();
+    create_bare_repo_with_commits(root.path(), "push.git", 2);
+    let bare_path = root.path().join("push.git");
+    let original_main = repo_head_oid(&bare_path);
+    let server = TestServer::start(root.path()).await;
+
+    let clone_dir = TempDir::new().unwrap();
+    let clone_path = clone_dir.path().join("push-clone");
+    let clone = Command::new("git")
+        .args([
+            "clone",
+            &server.url("push.git"),
+            clone_path.to_str().unwrap(),
+        ])
+        .output()
+        .expect("git clone for mixed push test");
+    assert!(clone.status.success(), "git clone failed: {:?}", clone);
+
+    for (key, val) in [("user.name", "Test User"), ("user.email", "test@test.com")] {
+        let out = Command::new("git")
+            .args(["config", key, val])
+            .current_dir(&clone_path)
+            .output()
+            .expect("git config");
+        assert!(out.status.success(), "git config failed: {:?}", out);
+    }
+
+    std::fs::write(clone_path.join("new-file.txt"), "new branch content\n").unwrap();
+    let out = Command::new("git")
+        .args(["checkout", "-b", "feature"])
+        .current_dir(&clone_path)
+        .output()
+        .expect("git checkout feature");
+    assert!(out.status.success(), "git checkout failed: {:?}", out);
+    let out = Command::new("git")
+        .args(["add", "new-file.txt"])
+        .current_dir(&clone_path)
+        .output()
+        .expect("git add feature file");
+    assert!(out.status.success(), "git add failed: {:?}", out);
+    let out = Command::new("git")
+        .args(["commit", "-m", "feature commit"])
+        .current_dir(&clone_path)
+        .env("GIT_AUTHOR_NAME", "Test User")
+        .env("GIT_AUTHOR_EMAIL", "test@test.com")
+        .env("GIT_COMMITTER_NAME", "Test User")
+        .env("GIT_COMMITTER_EMAIL", "test@test.com")
+        .output()
+        .expect("git commit feature");
+    assert!(out.status.success(), "git commit failed: {:?}", out);
+    let feature_oid = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(&clone_path)
+        .output()
+        .expect("git rev-parse feature");
+    let feature_oid = String::from_utf8(feature_oid.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+
+    let out = Command::new("git")
+        .args(["checkout", "main"])
+        .current_dir(&clone_path)
+        .output()
+        .expect("git checkout main");
+    assert!(out.status.success(), "git checkout main failed: {:?}", out);
+    let out = Command::new("git")
+        .args(["reset", "--hard", "HEAD~1"])
+        .current_dir(&clone_path)
+        .output()
+        .expect("git reset main backwards");
+    assert!(out.status.success(), "git reset failed: {:?}", out);
+
+    let push = Command::new("git")
+        .args([
+            "push",
+            "origin",
+            "main",
+            "feature:refs/heads/feature",
+            "--force",
+        ])
+        .current_dir(&clone_path)
+        .output()
+        .expect("git mixed push over http");
+    assert!(
+        !push.status.success(),
+        "preflight-rejected mixed push should fail without partial application: stdout={}, stderr={}",
+        String::from_utf8_lossy(&push.stdout),
+        String::from_utf8_lossy(&push.stderr),
+    );
+
+    let remote_main = repo_head_oid(&bare_path);
+    assert_eq!(remote_main, original_main, "main should remain unchanged");
+    let feature_ref = Command::new("git")
+        .args(["rev-parse", "refs/heads/feature"])
+        .current_dir(&bare_path)
+        .output()
+        .expect("git rev-parse feature ref");
+    assert!(
+        !feature_ref.status.success(),
+        "feature branch should not be created on partial failure"
+    );
+    assert_ne!(
+        feature_oid, original_main,
+        "sanity check feature commit differs from main"
     );
 
     server.stop().await;
