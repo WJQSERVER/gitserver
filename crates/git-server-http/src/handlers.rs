@@ -199,7 +199,9 @@ pub async fn info_refs_endpoint(
     }
 
     if protocol_v2 && !store.policy().upload_pack_v2 {
-        return Err(AppError::NotFound("service disabled: git-upload-pack".into()));
+        return Err(AppError::NotFound(
+            "service disabled: git-upload-pack".into(),
+        ));
     }
 
     require_auth(store, &headers)?;
@@ -249,7 +251,9 @@ pub async fn rpc_dispatch(
 
     if let Some(repo_path) = strip_path_suffix(&path, "/git-upload-pack") {
         if !store.policy().upload_pack {
-            return Err(AppError::NotFound("service disabled: git-upload-pack".into()));
+            return Err(AppError::NotFound(
+                "service disabled: git-upload-pack".into(),
+            ));
         }
         let request = body
             .collect()
@@ -259,7 +263,9 @@ pub async fn rpc_dispatch(
         rpc_endpoint(&store, repo_path, ServiceKind::UploadPack, headers, request).await
     } else if let Some(repo_path) = strip_path_suffix(&path, "/git-receive-pack") {
         if !store.policy().receive_pack {
-            return Err(AppError::NotFound("service disabled: git-receive-pack".into()));
+            return Err(AppError::NotFound(
+                "service disabled: git-receive-pack".into(),
+            ));
         }
         receive_pack_streaming_endpoint(&store, repo_path, headers, body).await
     } else {
@@ -318,7 +324,9 @@ async fn upload_pack_inner(
 
     if is_protocol_v2(&headers) {
         if !store.policy().upload_pack_v2 {
-            return Err(AppError::NotFound("service disabled: git-upload-pack".into()));
+            return Err(AppError::NotFound(
+                "service disabled: git-upload-pack".into(),
+            ));
         }
         return upload_pack_v2(repo_info.absolute_path.as_path(), &backend, &request).await;
     }
@@ -469,8 +477,8 @@ mod tests {
         DynamicRepoRegistry, MutableRepoRegistry, RepoInfo, RepoStore,
     };
 
-    use crate::router;
     use crate::error::AppError;
+    use crate::router;
 
     fn create_bare_repo(path: &Path) {
         let out = Command::new("git")
@@ -744,7 +752,10 @@ mod tests {
         );
 
         let mut headers = HeaderMap::new();
-        headers.insert("git-protocol", header::HeaderValue::from_static("version=2"));
+        headers.insert(
+            "git-protocol",
+            header::HeaderValue::from_static("version=2"),
+        );
 
         let err = crate::handlers::info_refs_endpoint(
             &state,

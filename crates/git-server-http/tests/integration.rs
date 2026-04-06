@@ -797,8 +797,14 @@ async fn upload_pack_v2_ls_refs_reports_tag_target_and_peeled_id() {
         .current_dir(&work_path)
         .output()
         .expect("git rev-parse peeled oid");
-    let tag_oid = String::from_utf8(tag_oid.stdout).unwrap().trim().to_string();
-    let peeled_oid = String::from_utf8(peeled_oid.stdout).unwrap().trim().to_string();
+    let tag_oid = String::from_utf8(tag_oid.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+    let peeled_oid = String::from_utf8(peeled_oid.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
 
     let server = TestServer::start(root.path()).await;
 
@@ -1506,7 +1512,11 @@ async fn git_push_annotated_tag_works_over_http_receive_pack() {
     let clone_dir = TempDir::new().unwrap();
     let clone_path = clone_dir.path().join("push-clone");
     let clone = Command::new("git")
-        .args(["clone", &server.url("push.git"), clone_path.to_str().unwrap()])
+        .args([
+            "clone",
+            &server.url("push.git"),
+            clone_path.to_str().unwrap(),
+        ])
         .output()
         .expect("git clone for tag push test");
     assert!(clone.status.success(), "git clone failed: {:?}", clone);
@@ -1714,7 +1724,10 @@ async fn dynamic_registry_rejects_parent_relative_paths() {
         })
         .unwrap_err();
 
-    assert!(matches!(err, git_server_core::error::Error::PathTraversal(_)));
+    assert!(matches!(
+        err,
+        git_server_core::error::Error::PathTraversal(_)
+    ));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1722,7 +1735,8 @@ async fn upload_pack_v2_is_disabled_by_policy() {
     let root = TempDir::new().unwrap();
     create_bare_repo_with_commits(root.path(), "readonly.git", 1);
 
-    let store = git_server_core::discovery::RepoStore::discover(root.path().to_path_buf(), 0).unwrap();
+    let store =
+        git_server_core::discovery::RepoStore::discover(root.path().to_path_buf(), 0).unwrap();
     let state = git_server_http::SharedState::with_store_and_auth_policy(
         store,
         git_server_http::AuthConfig::default(),
@@ -1765,7 +1779,8 @@ async fn git_push_is_rejected_when_receive_pack_is_disabled() {
     let root = TempDir::new().unwrap();
     create_bare_repo_with_commits(root.path(), "readonly.git", 1);
 
-    let store = git_server_core::discovery::RepoStore::discover(root.path().to_path_buf(), 0).unwrap();
+    let store =
+        git_server_core::discovery::RepoStore::discover(root.path().to_path_buf(), 0).unwrap();
     let state = git_server_http::SharedState::with_store_and_auth_policy(
         store,
         git_server_http::AuthConfig::default(),
@@ -1830,7 +1845,10 @@ async fn git_push_is_rejected_when_receive_pack_is_disabled() {
         .current_dir(&clone_path)
         .output()
         .expect("git push when receive-pack disabled");
-    assert!(!push.status.success(), "push should fail when receive-pack is disabled");
+    assert!(
+        !push.status.success(),
+        "push should fail when receive-pack is disabled"
+    );
 
     let stderr = String::from_utf8_lossy(&push.stderr);
     assert!(
