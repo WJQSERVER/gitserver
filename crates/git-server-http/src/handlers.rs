@@ -42,7 +42,7 @@ pub async fn list_repos(
     headers: HeaderMap,
 ) -> Result<Json<Vec<RepoInfo>>, AppError> {
     require_auth(&store, &headers)?;
-    Ok(Json(store.list().await))
+    Ok(Json(store.list().await?))
 }
 
 /// GET /healthz -- lightweight readiness/liveness probe.
