@@ -14,6 +14,7 @@ pub struct TestServer {
     pub addr: SocketAddr,
     shutdown_tx: Option<oneshot::Sender<()>>,
     handle: Option<tokio::task::JoinHandle<()>>,
+    refresh_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl TestServer {
@@ -55,7 +56,7 @@ impl TestServer {
 
         let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
 
-        tokio::spawn(async move {
+        let refresh_handle = tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_millis(100));
             interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
             interval.tick().await;
@@ -78,6 +79,7 @@ impl TestServer {
             addr,
             shutdown_tx: Some(shutdown_tx),
             handle: Some(handle),
+            refresh_handle: Some(refresh_handle),
         }
     }
 
@@ -93,6 +95,10 @@ impl TestServer {
         }
         if let Some(handle) = self.handle.take() {
             let _ = handle.await;
+        }
+        if let Some(refresh_handle) = self.refresh_handle.take() {
+            refresh_handle.abort();
+            let _ = refresh_handle.await;
         }
     }
 }
