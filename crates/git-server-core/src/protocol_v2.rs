@@ -631,29 +631,32 @@ fn collect_depth_limited_commits(
 
 fn collect_tree_oids(
     repo: &gix::Repository,
-    tree_oid: gix::ObjectId,
+    root_tree_oid: gix::ObjectId,
     seen: &mut HashSet<gix::ObjectId>,
     oids: &mut Vec<gix::ObjectId>,
 ) -> Result<()> {
-    if !seen.insert(tree_oid) {
-        return Ok(());
-    }
+    let mut stack = vec![root_tree_oid];
 
-    let tree_obj = repo
-        .find_object(tree_oid)
-        .map_err(|e| Error::Protocol(e.to_string()))?;
-    let tree_data = tree_obj.data.to_vec();
-    oids.push(tree_oid);
+    while let Some(tree_oid) = stack.pop() {
+        if !seen.insert(tree_oid) {
+            continue;
+        }
 
-    for entry_result in gix::objs::TreeRefIter::from_bytes(&tree_data) {
-        let entry = entry_result.map_err(|e| Error::Protocol(e.to_string()))?;
-        let entry_oid = entry.oid.to_owned();
-        let entry_mode = entry.mode;
+        let tree_obj = repo
+            .find_object(tree_oid)
+            .map_err(|e| Error::Protocol(e.to_string()))?;
+        oids.push(tree_oid);
 
-        if entry_mode.is_tree() {
-            collect_tree_oids(repo, entry_oid, seen, oids)?;
-        } else if seen.insert(entry_oid) && !entry_mode.is_commit() {
-            oids.push(entry_oid);
+        for entry_result in gix::objs::TreeRefIter::from_bytes(&tree_obj.data) {
+            let entry = entry_result.map_err(|e| Error::Protocol(e.to_string()))?;
+            let entry_oid = entry.oid.to_owned();
+            let entry_mode = entry.mode;
+
+            if entry_mode.is_tree() {
+                stack.push(entry_oid);
+            } else if seen.insert(entry_oid) && !entry_mode.is_commit() {
+                oids.push(entry_oid);
+            }
         }
     }
 
