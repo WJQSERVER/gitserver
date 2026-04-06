@@ -355,7 +355,7 @@ fn ensure_fast_forward(
         .map_err(|e| Error::Protocol(format!("failed to read commit metadata for {refname}: {e}")))?
         .seconds();
 
-    let mut ancestors = new_id
+    let ancestors = new_id
         .attach(repo)
         .ancestors()
         .sorting(gix::revision::walk::Sorting::ByCommitTimeCutoff {
@@ -365,7 +365,7 @@ fn ensure_fast_forward(
         .all()
         .map_err(|e| Error::Protocol(format!("failed to walk commits for {refname}: {e}")))?;
 
-    while let Some(id) = ancestors.next() {
+    for id in ancestors {
         check_interrupt(interrupt)?;
         if id.is_ok_and(|commit| commit.id == old_id) {
             return Ok(());
