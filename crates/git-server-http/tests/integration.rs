@@ -486,26 +486,28 @@ async fn upload_pack_streams_large_responses() {
         "streamed upload-pack responses should not advertise a fixed content length"
     );
 
-    let first_chunk = response
-        .chunk()
-        .await
-        .expect("read first response chunk")
-        .expect("expected first response chunk");
+    let mut body = Vec::new();
+    let mut chunk_count = 0;
+    while body.len() < 8 {
+        let chunk = response
+            .chunk()
+            .await
+            .expect("read response chunk")
+            .expect("expected response chunk");
+        chunk_count += 1;
+        body.extend_from_slice(&chunk);
+    }
     assert!(
-        first_chunk.starts_with(b"0008NAK\n"),
+        body.starts_with(b"0008NAK\n"),
         "streamed response should start with upload-pack preamble"
     );
-
-    let mut body = first_chunk.to_vec();
-    let mut chunk_count = 1;
     while let Some(chunk) = response.chunk().await.expect("read response chunk") {
         chunk_count += 1;
         body.extend_from_slice(&chunk);
     }
-
     assert!(
         chunk_count > 1,
-        "large pack responses should be readable incrementally"
+        "large pack responses should remain incrementally readable"
     );
     assert!(
         body.windows(4).any(|window| window == b"PACK"),
