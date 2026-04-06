@@ -30,6 +30,7 @@ pub struct UploadPackRequest {
     pub done: bool,
     pub capabilities: UploadPackCapabilities,
     pub shallow: ShallowRequest,
+    pub object_ids: Option<Vec<gix::ObjectId>>,
 }
 
 impl UploadPackRequest {
@@ -131,6 +132,7 @@ impl UploadPackRequest {
             done,
             capabilities,
             shallow,
+            object_ids: None,
         })
     }
 }
@@ -483,6 +485,7 @@ pub fn generate_pack(
     let repo_path = repo_path.to_path_buf();
     let wants: Vec<gix::ObjectId> = request.wants.clone();
     let haves: Vec<gix::ObjectId> = request.haves.clone();
+    let object_ids = request.object_ids.clone();
     let done = request.done;
     let ofs_delta = request.capabilities.ofs_delta;
     let multi_ack = request.capabilities.multi_ack;
@@ -495,6 +498,7 @@ pub fn generate_pack(
             &repo_path,
             &wants,
             &haves,
+            object_ids,
             GeneratePackOptions {
                 done,
                 ofs_delta,
@@ -533,6 +537,7 @@ fn generate_pack_sync(
     repo_path: &Path,
     wants: &[gix::ObjectId],
     haves: &[gix::ObjectId],
+    object_ids: Option<Vec<gix::ObjectId>>,
     options: GeneratePackOptions,
     tx: &tokio::sync::mpsc::Sender<std::result::Result<Bytes, std::io::Error>>,
 ) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -568,7 +573,10 @@ fn generate_pack_sync(
     }
 
     // Pass 1: collect OIDs only
-    let oids = collect_all_oids(&repo, wants, haves)?;
+    let oids = match object_ids {
+        Some(oids) => oids,
+        None => collect_all_oids(&repo, wants, haves)?,
+    };
 
     // Pass 2: stream each object
     let mut hasher = Sha1::new();
@@ -809,6 +817,7 @@ mod tests {
             done: true,
             capabilities: UploadPackCapabilities::default(),
             shallow: ShallowRequest::default(),
+            object_ids: None,
         };
 
         let mut reader = generate_pack(&repo_path, &request).unwrap();

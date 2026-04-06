@@ -180,6 +180,8 @@ pub async fn info_refs_endpoint(
     service: ServiceKind,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
+    let protocol_v2 = service == ServiceKind::UploadPack && is_protocol_v2(&headers);
+
     match service {
         ServiceKind::UploadPack if !store.policy().upload_pack => {
             return Err(AppError::NotFound(format!(
@@ -196,14 +198,15 @@ pub async fn info_refs_endpoint(
         _ => {}
     }
 
+    if protocol_v2 && !store.policy().upload_pack_v2 {
+        return Err(AppError::NotFound("service disabled: git-upload-pack".into()));
+    }
+
     require_auth(store, &headers)?;
-    let body = if service == ServiceKind::UploadPack
-        && is_protocol_v2(&headers)
-        && store.policy().upload_pack_v2
-    {
+    let repo_info = store.resolve(repo_path).await?;
+    let body = if protocol_v2 {
         git_server_core::protocol_v2::advertise_capabilities()
     } else {
-        let repo_info = store.resolve(repo_path).await?;
         let backend = GitBackend::new(repo_info.absolute_path.clone());
         if service == ServiceKind::UploadPack {
             backend.advertise_refs()?
@@ -245,6 +248,9 @@ pub async fn rpc_dispatch(
     let headers = parts.headers;
 
     if let Some(repo_path) = strip_path_suffix(&path, "/git-upload-pack") {
+        if !store.policy().upload_pack {
+            return Err(AppError::NotFound("service disabled: git-upload-pack".into()));
+        }
         let request = body
             .collect()
             .await
@@ -252,6 +258,9 @@ pub async fn rpc_dispatch(
             .to_bytes();
         rpc_endpoint(&store, repo_path, ServiceKind::UploadPack, headers, request).await
     } else if let Some(repo_path) = strip_path_suffix(&path, "/git-receive-pack") {
+        if !store.policy().receive_pack {
+            return Err(AppError::NotFound("service disabled: git-receive-pack".into()));
+        }
         receive_pack_streaming_endpoint(&store, repo_path, headers, body).await
     } else {
         Err(AppError::NotFound(format!("not found: /{path}")))
@@ -308,6 +317,9 @@ async fn upload_pack_inner(
     let backend = GitBackend::new(repo_info.absolute_path.clone());
 
     if is_protocol_v2(&headers) {
+        if !store.policy().upload_pack_v2 {
+            return Err(AppError::NotFound("service disabled: git-upload-pack".into()));
+        }
         return upload_pack_v2(repo_info.absolute_path.as_path(), &backend, &request).await;
     }
 
@@ -458,6 +470,7 @@ mod tests {
     };
 
     use crate::router;
+    use crate::error::AppError;
 
     fn create_bare_repo(path: &Path) {
         let out = Command::new("git")
@@ -714,6 +727,76 @@ mod tests {
         .unwrap();
 
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn low_level_info_refs_endpoint_requires_existing_repo_in_v2() {
+        let tmp = TempDir::new().unwrap();
+        let store = test_store(&tmp);
+        let state = crate::SharedState::with_store_and_auth_policy(
+            store,
+            crate::AuthConfig::default(),
+            crate::ServicePolicy {
+                upload_pack: true,
+                upload_pack_v2: true,
+                receive_pack: false,
+            },
+        );
+
+        let mut headers = HeaderMap::new();
+        headers.insert("git-protocol", header::HeaderValue::from_static("version=2"));
+
+        let err = crate::handlers::info_refs_endpoint(
+            &state,
+            "missing.git",
+            crate::handlers::ServiceKind::UploadPack,
+            headers,
+        )
+        .await
+        .unwrap_err();
+
+        assert!(matches!(err, AppError::NotFound(_)));
+    }
+
+    #[tokio::test]
+    async fn low_level_info_refs_requires_auth_before_repo_resolution() {
+        let tmp = TempDir::new().unwrap();
+        let store = test_store(&tmp);
+        let state = crate::SharedState::with_store_and_auth_policy(
+            store,
+            crate::AuthConfig {
+                basic: Some(crate::BasicAuthConfig {
+                    username: "alice".into(),
+                    password: "secret".into(),
+                }),
+                bearer_token: None,
+            },
+            crate::ServicePolicy {
+                upload_pack: true,
+                upload_pack_v2: true,
+                receive_pack: false,
+            },
+        );
+
+        let existing = crate::handlers::info_refs_endpoint(
+            &state,
+            "test.git",
+            crate::handlers::ServiceKind::UploadPack,
+            HeaderMap::new(),
+        )
+        .await
+        .unwrap_err();
+        let missing = crate::handlers::info_refs_endpoint(
+            &state,
+            "missing.git",
+            crate::handlers::ServiceKind::UploadPack,
+            HeaderMap::new(),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(matches!(existing, AppError::Unauthorized));
+        assert!(matches!(missing, AppError::Unauthorized));
     }
 
     #[tokio::test]

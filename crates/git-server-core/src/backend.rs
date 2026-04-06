@@ -109,6 +109,7 @@ mod tests {
             done: true,
             capabilities: Default::default(),
             shallow: Default::default(),
+            object_ids: None,
         };
         let reader = backend.upload_pack(&request).await.unwrap();
         let mut buf = Vec::new();

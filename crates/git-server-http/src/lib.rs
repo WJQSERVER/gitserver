@@ -115,7 +115,15 @@ impl SharedState {
 
     pub async fn refresh(&self) -> git_server_core::error::Result<()> {
         match &self.mode {
-            RepoMode::Discovered(store) => store.write().await.refresh(),
+            RepoMode::Discovered(store) => {
+                let (root, max_depth) = {
+                    let guard = store.read().await;
+                    (guard.root().to_path_buf(), guard.max_depth())
+                };
+                let refreshed = RepoStore::discover(root, max_depth)?;
+                *store.write().await = refreshed;
+                Ok(())
+            }
             RepoMode::Dynamic { .. } => Err(git_server_core::error::Error::Protocol(
                 "refresh is only available in discovery mode".into(),
             )),
