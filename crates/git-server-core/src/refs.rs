@@ -3,7 +3,7 @@ use std::path::Path;
 use crate::error::Result;
 use crate::pktline;
 
-const CAPABILITIES: &str = "side-band-64k";
+const CAPABILITIES: &str = "multi_ack multi_ack_detailed side-band-64k ofs-delta";
 
 const ZERO_OID: &str = "0000000000000000000000000000000000000000";
 
@@ -167,16 +167,24 @@ mod tests {
         let output_str = String::from_utf8_lossy(&output);
 
         assert!(
+            output_str.contains("multi_ack"),
+            "output missing multi_ack: {output_str:?}"
+        );
+        assert!(
+            output_str.contains("multi_ack_detailed"),
+            "output missing multi_ack_detailed: {output_str:?}"
+        );
+        assert!(
             output_str.contains("side-band-64k"),
             "output missing side-band-64k: {output_str:?}"
         );
         assert!(
-            !output_str.contains("thin-pack"),
-            "output should not advertise thin-pack: {output_str:?}"
+            output_str.contains("ofs-delta"),
+            "output missing ofs-delta: {output_str:?}"
         );
         assert!(
-            !output_str.contains("ofs-delta"),
-            "output should not advertise ofs-delta: {output_str:?}"
+            !output_str.contains("thin-pack"),
+            "output should not advertise thin-pack: {output_str:?}"
         );
         assert!(
             !output_str.contains("shallow"),

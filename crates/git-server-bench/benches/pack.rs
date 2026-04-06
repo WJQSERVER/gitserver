@@ -22,6 +22,9 @@ fn bench_pack_generation(c: &mut Criterion) {
             wants: vec![head],
             haves: vec![],
             done: true,
+            capabilities: Default::default(),
+            shallow: Default::default(),
+            object_ids: None,
         };
 
         group.bench_with_input(BenchmarkId::new("clone", name), &request, |b, req| {

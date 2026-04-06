@@ -20,18 +20,19 @@ Native smart HTTP Git server with gitoxide. Read-only clone and fetch.
 
 Reduce memory footprint and improve performance for large repositories.
 
-- [ ] Streaming pack generation (avoid building the entire packfile in memory)
-- [ ] Delta compression (OFS_DELTA) to reduce transfer size
-- [ ] Multi-ack negotiation for efficient incremental fetches
-- [ ] Shallow clone support
-- [ ] Response compression (gzip/zstd on ref advertisement)
+- [x] Git protocol v2 support (`ls-refs`, `fetch` over smart HTTP)
+- [x] Streaming pack generation (avoid building the entire packfile in memory)
+- [x] Delta compression (OFS_DELTA) to reduce transfer size
+- [x] Multi-ack negotiation for efficient incremental fetches
+- [x] Shallow clone support
+- [x] Response compression (gzip/zstd on ref advertisement)
 
 ## v0.3 -- Production readiness
 
 Operational features for running at scale.
 
-- [ ] Hot-reload of repository list (watch filesystem or periodic rescan)
-- [ ] Health check endpoint (`GET /healthz`)
+- [x] Hot-reload of repository list (watch filesystem or periodic rescan)
+- [x] Health check endpoint (`GET /healthz`)
 - [ ] Prometheus metrics (request count, latency, pack size, active connections)
 - [ ] Graceful shutdown with in-flight request draining
 - [ ] Configuration file (TOML) as alternative to CLI flags
@@ -41,14 +42,13 @@ Operational features for running at scale.
 
 Enable push operations.
 
-- [ ] `git-receive-pack` endpoint (POST + ref advertisement)
+- [x] `git-receive-pack` endpoint (POST + ref advertisement)
 - [ ] Pre-receive and post-receive hook support
 - [ ] Per-repository access control (read-only vs read-write)
-- [ ] Ref update validation
+- [x] Ref update validation
 
 ## Future considerations
 
-- Git protocol v2 support
 - Authentication (Basic, Bearer token, mTLS)
 - Repository creation via API
 - Web UI for repository browsing

@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use clap::Parser;
+use tokio::time::{Duration, MissedTickBehavior};
 use tracing::info;
 
 use git_server_core::discovery::RepoStore;
@@ -38,6 +39,26 @@ struct Cli {
     /// Max directory depth for repo discovery
     #[arg(long, default_value_t = 3)]
     max_depth: u32,
+
+    /// Periodically rescan repositories to pick up additions/removals.
+    #[arg(long, default_value_t = 30)]
+    rescan_interval_secs: u64,
+
+    /// Require HTTP Basic auth with this username.
+    #[arg(long, requires = "auth_basic_password")]
+    auth_basic_username: Option<String>,
+
+    /// Require HTTP Basic auth with this password.
+    #[arg(long, requires = "auth_basic_username")]
+    auth_basic_password: Option<String>,
+
+    /// Require Bearer authentication with this token.
+    #[arg(long)]
+    auth_bearer_token: Option<String>,
+
+    /// Enable git-receive-pack and allow push operations.
+    #[arg(long, default_value_t = false)]
+    enable_receive_pack: bool,
 }
 
 #[derive(Clone, clap::ValueEnum)]
@@ -84,7 +105,37 @@ fn main() -> anyhow::Result<()> {
     let runtime = builder.build()?;
 
     runtime.block_on(async {
-        let app = git_server_http::router(store);
+        let auth = git_server_http::AuthConfig {
+            basic: cli.auth_basic_username.zip(cli.auth_basic_password).map(
+                |(username, password)| git_server_http::BasicAuthConfig { username, password },
+            ),
+            bearer_token: cli.auth_bearer_token,
+        };
+        let state = git_server_http::SharedState::with_store_and_auth_policy(
+            store,
+            auth,
+            git_server_http::ServicePolicy {
+                receive_pack: cli.enable_receive_pack,
+                ..Default::default()
+            },
+        );
+        let app = git_server_http::router(state.clone());
+
+        let interval_secs = cli.rescan_interval_secs;
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(interval_secs));
+            interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+            interval.tick().await;
+
+            loop {
+                interval.tick().await;
+                match state.refresh().await {
+                    Ok(()) => tracing::debug!("repository list refreshed"),
+                    Err(err) => tracing::warn!("failed to refresh repository list: {err}"),
+                }
+            }
+        });
+
         let addr = format!("{}:{}", cli.bind, cli.port);
         let listener = tokio::net::TcpListener::bind(&addr).await?;
         info!(%addr, "server listening");
