@@ -59,9 +59,18 @@ pub fn advertise_receive_refs(repo_path: &Path) -> Result<Vec<u8>> {
 }
 
 pub fn receive_pack<R: Read>(repo_path: &Path, request: R) -> Result<Vec<u8>> {
+    let interrupt = AtomicBool::new(false);
+    receive_pack_with_interrupt(repo_path, request, &interrupt)
+}
+
+pub fn receive_pack_with_interrupt<R: Read>(
+    repo_path: &Path,
+    request: R,
+    interrupt: &AtomicBool,
+) -> Result<Vec<u8>> {
     let repo = gix::open(repo_path)?;
-    let mut parsed = parse_request(request)?;
-    let status = apply_commands(&repo, repo_path, &mut parsed)?;
+    let mut parsed = parse_request(request, interrupt)?;
+    let status = apply_commands(&repo, repo_path, &mut parsed, interrupt)?;
     Ok(encode_report_status(&parsed.capabilities, &status))
 }
 
@@ -88,12 +97,16 @@ enum CommandStatus {
     Ng(String, String),
 }
 
-fn parse_request<R: Read>(request: R) -> Result<ReceivePackRequest<BufReader<R>>> {
+fn parse_request<R: Read>(
+    request: R,
+    interrupt: &AtomicBool,
+) -> Result<ReceivePackRequest<BufReader<R>>> {
     let mut request = BufReader::new(request);
     let mut commands = Vec::new();
     let mut capabilities = ReceivePackCapabilities::default();
 
     loop {
+        check_interrupt(interrupt)?;
         let mut prefix = [0u8; 4];
         match request.read_exact(&mut prefix) {
             Ok(()) => {}
@@ -114,6 +127,7 @@ fn parse_request<R: Read>(request: R) -> Result<ReceivePackRequest<BufReader<R>>
             return Err(Error::Protocol("invalid pkt-line frame length".into()));
         }
 
+        check_interrupt(interrupt)?;
         let mut payload = vec![0u8; len - 4];
         request.read_exact(&mut payload)?;
 
@@ -168,14 +182,17 @@ fn apply_commands<R: BufRead>(
     repo: &gix::Repository,
     repo_path: &Path,
     request: &mut ReceivePackRequest<R>,
+    interrupt: &AtomicBool,
 ) -> Result<Vec<CommandStatus>> {
+    check_interrupt(interrupt)?;
     if request.pack.fill_buf().map(|buf: &[u8]| !buf.is_empty())? {
-        write_pack(repo_path, &mut request.pack)?;
+        write_pack(repo_path, &mut request.pack, interrupt)?;
     }
 
     let mut statuses = Vec::with_capacity(request.commands.len());
     for command in &request.commands {
-        match validate_and_update_ref(repo, command) {
+        check_interrupt(interrupt)?;
+        match validate_and_update_ref(repo, command, interrupt) {
             Ok(()) => statuses.push(CommandStatus::Ok(command.refname.clone())),
             Err(err) => statuses.push(CommandStatus::Ng(command.refname.clone(), err.to_string())),
         }
@@ -183,18 +200,24 @@ fn apply_commands<R: BufRead>(
     Ok(statuses)
 }
 
-fn write_pack<R: BufRead>(repo_path: &Path, pack: &mut R) -> Result<()> {
+fn write_pack<R: BufRead>(repo_path: &Path, pack: &mut R, interrupt: &AtomicBool) -> Result<()> {
     let mut progress = Discard;
-    let interrupt = AtomicBool::new(false);
     let outcome = gix_pack::Bundle::write_to_directory(
         pack,
         Some(repo_path.join("objects/pack").as_path()),
         &mut progress,
-        &interrupt,
+        interrupt,
         None::<&gix::Repository>,
         Default::default(),
-    )
-    .map_err(|e| Error::Protocol(format!("failed to write incoming pack: {e}")))?;
+    );
+    if interrupt.load(std::sync::atomic::Ordering::Relaxed) {
+        return Err(Error::Io(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "receive-pack timed out",
+        )));
+    }
+    let outcome =
+        outcome.map_err(|e| Error::Protocol(format!("failed to write incoming pack: {e}")))?;
 
     if let Some(keep) = outcome.keep_path {
         let _ = std::fs::remove_file(keep);
@@ -202,7 +225,22 @@ fn write_pack<R: BufRead>(repo_path: &Path, pack: &mut R) -> Result<()> {
     Ok(())
 }
 
-fn validate_and_update_ref(repo: &gix::Repository, command: &UpdateCommand) -> Result<()> {
+fn check_interrupt(interrupt: &AtomicBool) -> Result<()> {
+    if interrupt.load(std::sync::atomic::Ordering::Relaxed) {
+        Err(Error::Io(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "receive-pack timed out",
+        )))
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_and_update_ref(
+    repo: &gix::Repository,
+    command: &UpdateCommand,
+    interrupt: &AtomicBool,
+) -> Result<()> {
     if command.new_id == ZERO_ID {
         return Err(Error::Protocol(format!(
             "deletion prohibited for {}",
@@ -243,7 +281,7 @@ fn validate_and_update_ref(repo: &gix::Repository, command: &UpdateCommand) -> R
         let old_id = gix::ObjectId::from_hex(command.old_id.as_bytes())
             .map_err(|_| Error::Protocol(format!("invalid old object id: {}", command.old_id)))?;
         if is_branch {
-            ensure_fast_forward(repo, old_id, new_id, &command.refname)?;
+            ensure_fast_forward(repo, old_id, new_id, &command.refname, interrupt)?;
         }
         (
             PreviousValue::MustExistAndMatch(Target::Object(old_id)),
@@ -274,7 +312,9 @@ fn ensure_fast_forward(
     old_id: gix::ObjectId,
     new_id: gix::ObjectId,
     refname: &str,
+    interrupt: &AtomicBool,
 ) -> Result<()> {
+    check_interrupt(interrupt)?;
     if old_id == new_id {
         return Ok(());
     }
@@ -298,13 +338,16 @@ fn ensure_fast_forward(
         .all()
         .map_err(|e| Error::Protocol(format!("failed to walk commits for {refname}: {e}")))?;
 
-    if ancestors.any(|id: std::result::Result<_, _>| id.is_ok_and(|commit| commit.id == old_id)) {
-        Ok(())
-    } else {
-        Err(Error::Protocol(format!(
-            "non-fast-forward update to {refname} is not allowed"
-        )))
+    while let Some(id) = ancestors.next() {
+        check_interrupt(interrupt)?;
+        if id.is_ok_and(|commit| commit.id == old_id) {
+            return Ok(());
+        }
     }
+
+    Err(Error::Protocol(format!(
+        "non-fast-forward update to {refname} is not allowed"
+    )))
 }
 
 fn encode_report_status(
@@ -412,7 +455,8 @@ mod tests {
         body.extend_from_slice(payload);
         body.extend_from_slice(b"0000PACK");
 
-        let parsed = parse_request(std::io::Cursor::new(&body)).unwrap();
+        let interrupt = AtomicBool::new(false);
+        let parsed = parse_request(std::io::Cursor::new(&body), &interrupt).unwrap();
         assert_eq!(parsed.commands.len(), 1);
         assert!(parsed.capabilities.report_status);
         assert!(parsed.capabilities.report_status_v2);
@@ -444,9 +488,26 @@ mod tests {
                 new_id: tree_id,
                 refname: "refs/heads/feature".into(),
             },
+            &AtomicBool::new(false),
         )
         .unwrap_err();
 
         assert!(err.to_string().contains("must point to a commit"));
+    }
+
+    #[test]
+    fn ensure_fast_forward_respects_interrupt() {
+        let root = TempDir::new().unwrap();
+        let repo_path = create_repo_with_commit(root.path());
+        let repo = gix::open(repo_path).unwrap();
+        let head = repo.head_id().unwrap().detach();
+        let interrupt = AtomicBool::new(true);
+
+        let err =
+            ensure_fast_forward(&repo, head, head, "refs/heads/main", &interrupt).unwrap_err();
+        match err {
+            Error::Io(inner) => assert_eq!(inner.kind(), std::io::ErrorKind::TimedOut),
+            other => panic!("expected timeout io error, got {other}"),
+        }
     }
 }
