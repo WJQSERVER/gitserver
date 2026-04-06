@@ -120,7 +120,14 @@ impl SharedState {
                     let guard = store.read().await;
                     (guard.root().to_path_buf(), guard.max_depth())
                 };
-                let refreshed = RepoStore::discover(root, max_depth)?;
+                let refreshed =
+                    tokio::task::spawn_blocking(move || RepoStore::discover(root, max_depth))
+                        .await
+                        .map_err(|e| {
+                            git_server_core::error::Error::Protocol(format!(
+                                "refresh task panicked: {e}"
+                            ))
+                        })??;
                 *store.write().await = refreshed;
                 Ok(())
             }
