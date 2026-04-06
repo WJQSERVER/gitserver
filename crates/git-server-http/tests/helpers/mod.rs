@@ -62,7 +62,9 @@ impl TestServer {
             interval.tick().await;
             loop {
                 interval.tick().await;
-                let _ = state.refresh().await;
+                if let Err(err) = state.refresh().await {
+                    eprintln!("test refresh failed: {err}");
+                }
             }
         });
 

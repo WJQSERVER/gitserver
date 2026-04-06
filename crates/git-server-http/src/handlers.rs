@@ -37,7 +37,11 @@ pub struct HealthzResponse {
 }
 
 /// GET / -- list all discovered repositories
-pub async fn list_repos(State(store): State<SharedState>) -> Result<Json<Vec<RepoInfo>>, AppError> {
+pub async fn list_repos(
+    State(store): State<SharedState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<RepoInfo>>, AppError> {
+    require_auth(&store, &headers)?;
     Ok(Json(store.list().await?))
 }
 
@@ -698,6 +702,30 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn list_repos_requires_auth_when_configured() {
+        let tmp = TempDir::new().unwrap();
+        let store = test_store(&tmp);
+        let state = crate::SharedState::with_auth(
+            store,
+            crate::AuthConfig {
+                basic: Some(crate::BasicAuthConfig {
+                    username: "alice".into(),
+                    password: "secret".into(),
+                }),
+                bearer_token: None,
+            },
+        );
+        let app = router(state);
+
+        let response = app
+            .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]
