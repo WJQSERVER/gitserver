@@ -189,15 +189,45 @@ fn apply_commands<R: BufRead>(
         write_pack(repo_path, &mut request.pack, interrupt)?;
     }
 
-    let mut statuses = Vec::with_capacity(request.commands.len());
-    for command in &request.commands {
+    let mut edits = Vec::with_capacity(request.commands.len());
+    for (index, command) in request.commands.iter().enumerate() {
         check_interrupt(interrupt)?;
-        match validate_and_update_ref(repo, command, interrupt) {
-            Ok(()) => statuses.push(CommandStatus::Ok(command.refname.clone())),
-            Err(err) => statuses.push(CommandStatus::Ng(command.refname.clone(), err.to_string())),
+        match validate_ref_update(repo, command, interrupt) {
+            Ok(edit) => edits.push((command.refname.clone(), edit)),
+            Err(err) => {
+                return Ok(request
+                    .commands
+                    .iter()
+                    .enumerate()
+                    .map(|(cmd_index, cmd)| {
+                        if cmd_index == index {
+                            CommandStatus::Ng(cmd.refname.clone(), err.to_string())
+                        } else {
+                            CommandStatus::Ng(
+                                cmd.refname.clone(),
+                                "transaction aborted due to another command failing validation"
+                                    .into(),
+                            )
+                        }
+                    })
+                    .collect());
+            }
         }
     }
-    Ok(statuses)
+
+    check_interrupt(interrupt)?;
+    match repo.edit_references(edits.into_iter().map(|(_, edit)| edit)) {
+        Ok(_) => Ok(request
+            .commands
+            .iter()
+            .map(|cmd| CommandStatus::Ok(cmd.refname.clone()))
+            .collect()),
+        Err(err) => Ok(request
+            .commands
+            .iter()
+            .map(|cmd| CommandStatus::Ng(cmd.refname.clone(), format!("transaction failed: {err}")))
+            .collect()),
+    }
 }
 
 fn write_pack<R: BufRead>(repo_path: &Path, pack: &mut R, interrupt: &AtomicBool) -> Result<()> {
@@ -236,11 +266,11 @@ fn check_interrupt(interrupt: &AtomicBool) -> Result<()> {
     }
 }
 
-fn validate_and_update_ref(
+fn validate_ref_update(
     repo: &gix::Repository,
     command: &UpdateCommand,
     interrupt: &AtomicBool,
-) -> Result<()> {
+) -> Result<RefEdit> {
     if command.new_id == ZERO_ID {
         return Err(Error::Protocol(format!(
             "deletion prohibited for {}",
@@ -289,7 +319,7 @@ fn validate_and_update_ref(
         )
     };
 
-    repo.edit_reference(RefEdit {
+    Ok(RefEdit {
         change: Change::Update {
             log: LogChange {
                 mode: RefLog::AndReference,
@@ -302,9 +332,6 @@ fn validate_and_update_ref(
         name,
         deref: false,
     })
-    .map_err(|e| Error::Protocol(format!("failed to update {}: {e}", command.refname)))?;
-
-    Ok(())
 }
 
 fn ensure_fast_forward(
@@ -481,7 +508,7 @@ mod tests {
             .trim()
             .to_string();
 
-        let err = validate_and_update_ref(
+        let err = validate_ref_update(
             &repo,
             &UpdateCommand {
                 old_id: ZERO_ID.into(),
