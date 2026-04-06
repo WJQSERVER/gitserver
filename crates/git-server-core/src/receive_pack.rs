@@ -12,7 +12,7 @@ use crate::error::{Error, Result};
 use crate::pktline;
 
 const ZERO_ID: &str = "0000000000000000000000000000000000000000";
-const CAPABILITIES: &str = "report-status report-status-v2 delete-refs side-band-64k quiet atomic ofs-delta object-format=sha1 agent=git-server/0.1";
+const CAPABILITIES: &str = "report-status report-status-v2 side-band-64k quiet ofs-delta object-format=sha1 agent=git-server/0.1";
 
 pub fn advertise_receive_refs(repo_path: &Path) -> Result<Vec<u8>> {
     let repo = gix::open(repo_path)?;
@@ -210,12 +210,14 @@ fn validate_and_update_ref(repo: &gix::Repository, command: &UpdateCommand) -> R
         )));
     }
 
+    let is_branch = command.refname.starts_with("refs/heads/");
+    let is_tag = command.refname.starts_with("refs/tags/");
     let new_id = gix::ObjectId::from_hex(command.new_id.as_bytes())
         .map_err(|_| Error::Protocol(format!("invalid new object id: {}", command.new_id)))?;
     let new_header = repo
         .find_header(new_id)
         .map_err(|e| Error::Protocol(format!("missing new object {}: {e}", command.new_id)))?;
-    if new_header.kind() != gix::objs::Kind::Commit {
+    if is_branch && new_header.kind() != gix::objs::Kind::Commit {
         return Err(Error::Protocol(format!(
             "updates to {} must point to a commit",
             command.refname
@@ -231,9 +233,18 @@ fn validate_and_update_ref(repo: &gix::Repository, command: &UpdateCommand) -> R
     let (expected, log_message) = if command.old_id == ZERO_ID {
         (PreviousValue::MustNotExist, BString::from("push create"))
     } else {
+        if is_tag {
+            return Err(Error::Protocol(format!(
+                "updating existing tag {} is not allowed",
+                command.refname
+            )));
+        }
+
         let old_id = gix::ObjectId::from_hex(command.old_id.as_bytes())
             .map_err(|_| Error::Protocol(format!("invalid old object id: {}", command.old_id)))?;
-        ensure_fast_forward(repo, old_id, new_id, &command.refname)?;
+        if is_branch {
+            ensure_fast_forward(repo, old_id, new_id, &command.refname)?;
+        }
         (
             PreviousValue::MustExistAndMatch(Target::Object(old_id)),
             BString::from("push"),
@@ -409,5 +420,33 @@ mod tests {
         let mut reader = parsed.pack;
         reader.read_to_string(&mut pack).unwrap();
         assert_eq!(pack.as_bytes(), b"PACK");
+    }
+
+    #[test]
+    fn branch_updates_require_commit_target() {
+        let root = TempDir::new().unwrap();
+        let repo_path = create_repo_with_commit(root.path());
+        let repo = gix::open(repo_path).unwrap();
+        let tree_id = Command::new("git")
+            .args(["rev-parse", "HEAD^{tree}"])
+            .current_dir(root.path().join("work"))
+            .output()
+            .unwrap();
+        let tree_id = String::from_utf8(tree_id.stdout)
+            .unwrap()
+            .trim()
+            .to_string();
+
+        let err = validate_and_update_ref(
+            &repo,
+            &UpdateCommand {
+                old_id: ZERO_ID.into(),
+                new_id: tree_id,
+                refname: "refs/heads/feature".into(),
+            },
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("must point to a commit"));
     }
 }

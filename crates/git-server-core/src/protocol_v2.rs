@@ -86,18 +86,23 @@ pub fn ls_refs(repo_path: &Path, request: &LsRefsRequest) -> Result<Vec<u8>> {
     let repo = gix::open(repo_path)?;
     let mut refs = BTreeSet::new();
 
-    if let Ok(mut head) = repo.head()
-        && let Some(id) = head
+    if let Ok(mut head) = repo.head() {
+        if let Some(id) = head
             .try_peel_to_id()
             .map_err(|e| Error::Protocol(e.to_string()))?
-    {
-        let mut line = format!("{} HEAD", id.detach());
-        if request.symrefs
+        {
+            let mut line = format!("{} HEAD", id.detach());
+            if request.symrefs
+                && let Some(target) = head.referent_name()
+            {
+                line.push_str(&format!(" symref-target:{}", target.as_bstr()));
+            }
+            refs.insert(line);
+        } else if request.unborn
             && let Some(target) = head.referent_name()
         {
-            line.push_str(&format!(" symref-target:{}", target.as_bstr()));
+            refs.insert(format!("unborn HEAD symref-target:{}", target.as_bstr()));
         }
-        refs.insert(line);
     }
 
     if let Ok(platform) = repo.references()
@@ -114,9 +119,12 @@ pub fn ls_refs(repo_path: &Path, request: &LsRefsRequest) -> Result<Vec<u8>> {
                 continue;
             }
 
-            let mut line = match reference.peel_to_id() {
-                Ok(id) => format!("{} {name}", id.detach()),
-                Err(_) => continue,
+            let mut line = match reference.try_id() {
+                Some(id) => format!("{} {name}", id.detach()),
+                None => match reference.peel_to_id() {
+                    Ok(id) => format!("{} {name}", id.detach()),
+                    Err(_) => continue,
+                },
             };
 
             if request.symrefs
@@ -395,7 +403,7 @@ pub fn apply_shallow_boundaries(
     let previous_shallows = request.upload_request.shallow.client_shallows.clone();
     let state = collect_depth_limited_commits(&repo, &request.upload_request, depth)?;
 
-    request.upload_request.wants = state.included_commits.clone();
+    request.upload_request.object_ids = Some(state.included_objects.clone());
     request
         .upload_request
         .haves
@@ -419,7 +427,7 @@ pub fn apply_shallow_boundaries(
 }
 
 struct DepthState {
-    included_commits: Vec<gix::ObjectId>,
+    included_objects: Vec<gix::ObjectId>,
     shallow_boundary: Vec<gix::ObjectId>,
 }
 
@@ -498,6 +506,7 @@ fn parse_fetch(args: Vec<String>) -> Result<Command> {
             done,
             capabilities,
             shallow,
+            object_ids: None,
         },
     }))
 }
@@ -571,11 +580,12 @@ fn collect_depth_limited_commits(
 
     let mut queue = VecDeque::new();
     let mut seen = HashSet::new();
-    let mut included = Vec::new();
+    let mut included_commits = Vec::new();
+    let mut included_objects = Vec::new();
     let mut shallow_boundary = Vec::new();
 
     let base_depth = if request.shallow.deepen_relative {
-        request.shallow.client_shallows.len().max(1)
+        1usize
     } else {
         0
     };
@@ -589,11 +599,16 @@ fn collect_depth_limited_commits(
         if !seen.insert(commit_oid) {
             continue;
         }
-        included.push(commit_oid);
+        included_commits.push(commit_oid);
+        included_objects.push(commit_oid);
 
         let commit_obj = repo
             .find_object(commit_oid)
             .map_err(|e| Error::Protocol(e.to_string()))?;
+        let tree_oid = gix::objs::CommitRefIter::from_bytes(&commit_obj.data)
+            .tree_id()
+            .map_err(|e| Error::Protocol(e.to_string()))?;
+        collect_tree_oids(repo, tree_oid, &mut seen, &mut included_objects)?;
         let parents: Vec<_> = gix::objs::CommitRefIter::from_bytes(&commit_obj.data)
             .parent_ids()
             .collect();
@@ -609,9 +624,43 @@ fn collect_depth_limited_commits(
     }
 
     Ok(DepthState {
-        included_commits: included,
+        included_objects,
         shallow_boundary,
     })
+}
+
+fn collect_tree_oids(
+    repo: &gix::Repository,
+    root_tree_oid: gix::ObjectId,
+    seen: &mut HashSet<gix::ObjectId>,
+    oids: &mut Vec<gix::ObjectId>,
+) -> Result<()> {
+    let mut stack = vec![root_tree_oid];
+
+    while let Some(tree_oid) = stack.pop() {
+        if !seen.insert(tree_oid) {
+            continue;
+        }
+
+        let tree_obj = repo
+            .find_object(tree_oid)
+            .map_err(|e| Error::Protocol(e.to_string()))?;
+        oids.push(tree_oid);
+
+        for entry_result in gix::objs::TreeRefIter::from_bytes(&tree_obj.data) {
+            let entry = entry_result.map_err(|e| Error::Protocol(e.to_string()))?;
+            let entry_oid = entry.oid.to_owned();
+            let entry_mode = entry.mode;
+
+            if entry_mode.is_tree() {
+                stack.push(entry_oid);
+            } else if seen.insert(entry_oid) && !entry_mode.is_commit() {
+                oids.push(entry_oid);
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -656,5 +705,32 @@ mod tests {
         assert_eq!(req.upload_request.wants.len(), 1);
         assert!(req.upload_request.done);
         assert!(req.upload_request.capabilities.ofs_delta);
+    }
+
+    #[test]
+    fn ls_refs_returns_unborn_head() {
+        let root = tempfile::TempDir::new().unwrap();
+        let repo_path = root.path().join("repo.git");
+        std::process::Command::new("git")
+            .args(["init", "--bare", repo_path.to_str().unwrap()])
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["symbolic-ref", "HEAD", "refs/heads/main"])
+            .current_dir(&repo_path)
+            .output()
+            .unwrap();
+
+        let out = ls_refs(
+            &repo_path,
+            &LsRefsRequest {
+                unborn: true,
+                symrefs: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("unborn HEAD symref-target:refs/heads/main"));
     }
 }

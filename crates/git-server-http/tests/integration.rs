@@ -748,6 +748,99 @@ async fn upload_pack_v2_ls_refs_returns_matching_refs() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn upload_pack_v2_ls_refs_reports_tag_target_and_peeled_id() {
+    let root = TempDir::new().unwrap();
+    let bare_path = create_bare_repo_with_commits(root.path(), "v2.git", 1);
+
+    let work_dir = TempDir::new().unwrap();
+    let work_path = work_dir.path().join("tagger");
+    let out = Command::new("git")
+        .args([
+            "clone",
+            bare_path.to_str().unwrap(),
+            work_path.to_str().unwrap(),
+        ])
+        .output()
+        .expect("git clone for tag setup");
+    assert!(out.status.success(), "git clone failed: {:?}", out);
+
+    for (key, val) in [("user.name", "Test User"), ("user.email", "test@test.com")] {
+        let out = Command::new("git")
+            .args(["config", key, val])
+            .current_dir(&work_path)
+            .output()
+            .expect("git config");
+        assert!(out.status.success(), "git config failed: {:?}", out);
+    }
+
+    let tag = Command::new("git")
+        .args(["tag", "-a", "v1.0", "-m", "release"])
+        .current_dir(&work_path)
+        .output()
+        .expect("git annotated tag");
+    assert!(tag.status.success(), "git tag failed: {:?}", tag);
+
+    let push = Command::new("git")
+        .args(["push", "origin", "refs/tags/v1.0"])
+        .current_dir(&work_path)
+        .output()
+        .expect("git push tag");
+    assert!(push.status.success(), "git push tag failed: {:?}", push);
+
+    let tag_oid = Command::new("git")
+        .args(["rev-parse", "refs/tags/v1.0"])
+        .current_dir(&work_path)
+        .output()
+        .expect("git rev-parse tag oid");
+    let peeled_oid = Command::new("git")
+        .args(["rev-parse", "refs/tags/v1.0^{}"])
+        .current_dir(&work_path)
+        .output()
+        .expect("git rev-parse peeled oid");
+    let tag_oid = String::from_utf8(tag_oid.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+    let peeled_oid = String::from_utf8(peeled_oid.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+
+    let server = TestServer::start(root.path()).await;
+
+    let mut body = Vec::new();
+    body.extend_from_slice(&make_pktline("command=ls-refs\n"));
+    body.extend_from_slice(&make_pktline("object-format=sha1\n"));
+    body.extend_from_slice(b"0001");
+    body.extend_from_slice(&make_pktline("peel\n"));
+    body.extend_from_slice(&make_pktline("ref-prefix refs/tags/\n"));
+    body.extend_from_slice(b"0000");
+
+    let response = reqwest::Client::new()
+        .post(server.url("v2.git/git-upload-pack"))
+        .header("Git-Protocol", "version=2")
+        .header("content-type", "application/x-git-upload-pack-request")
+        .body(body)
+        .send()
+        .await
+        .expect("POST ls-refs v2 for tag");
+
+    assert_eq!(response.status(), 200);
+    let text = String::from_utf8(
+        response
+            .bytes()
+            .await
+            .expect("read ls-refs tag response")
+            .to_vec(),
+    )
+    .unwrap();
+    assert!(text.contains(&format!("{tag_oid} refs/tags/v1.0")));
+    assert!(text.contains(&format!("peeled:{peeled_oid}")));
+
+    server.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn git_fetch_works_over_protocol_v2() {
     let root = TempDir::new().unwrap();
     create_bare_repo_with_commits(root.path(), "v2.git", 2);
@@ -1399,11 +1492,66 @@ async fn git_delete_push_is_rejected_by_ref_update_validation() {
         String::from_utf8_lossy(&delete.stdout),
         String::from_utf8_lossy(&delete.stderr),
     );
+
+    let remote_head = Command::new("git")
+        .args(["rev-parse", "refs/heads/main"])
+        .current_dir(root.path().join("push.git"))
+        .output()
+        .expect("git rev-parse bare head after delete push");
     assert!(
-        String::from_utf8_lossy(&delete.stderr).contains("deletion prohibited")
-            || String::from_utf8_lossy(&delete.stderr).contains("denyDeletes"),
-        "expected delete rejection message, got: {}",
-        String::from_utf8_lossy(&delete.stderr)
+        remote_head.status.success(),
+        "main branch should still exist after rejected delete push: stdout={}, stderr={}",
+        String::from_utf8_lossy(&remote_head.stdout),
+        String::from_utf8_lossy(&remote_head.stderr),
+    );
+
+    server.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn git_push_annotated_tag_works_over_http_receive_pack() {
+    let root = TempDir::new().unwrap();
+    create_bare_repo_with_commits(root.path(), "push.git", 1);
+    let server = TestServer::start(root.path()).await;
+
+    let clone_dir = TempDir::new().unwrap();
+    let clone_path = clone_dir.path().join("push-clone");
+    let clone = Command::new("git")
+        .args([
+            "clone",
+            &server.url("push.git"),
+            clone_path.to_str().unwrap(),
+        ])
+        .output()
+        .expect("git clone for tag push test");
+    assert!(clone.status.success(), "git clone failed: {:?}", clone);
+
+    for (key, val) in [("user.name", "Test User"), ("user.email", "test@test.com")] {
+        let out = Command::new("git")
+            .args(["config", key, val])
+            .current_dir(&clone_path)
+            .output()
+            .expect("git config");
+        assert!(out.status.success(), "git config failed: {:?}", out);
+    }
+
+    let tag = Command::new("git")
+        .args(["tag", "-a", "v1.0", "-m", "release"])
+        .current_dir(&clone_path)
+        .output()
+        .expect("git annotated tag");
+    assert!(tag.status.success(), "git tag failed: {:?}", tag);
+
+    let push = Command::new("git")
+        .args(["push", "origin", "refs/tags/v1.0"])
+        .current_dir(&clone_path)
+        .output()
+        .expect("git push tag over http");
+    assert!(
+        push.status.success(),
+        "git push tag failed: stdout={}, stderr={}",
+        String::from_utf8_lossy(&push.stdout),
+        String::from_utf8_lossy(&push.stderr),
     );
 
     server.stop().await;
@@ -1554,6 +1702,167 @@ async fn receive_pack_is_disabled_by_default_policy() {
     .await
     .expect("GET receive-pack advertisement");
     assert_eq!(response.status(), 404);
+
+    let _ = shutdown_tx.send(());
+    handle.await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn dynamic_registry_rejects_parent_relative_paths() {
+    let root = TempDir::new().unwrap();
+    let repo_path = create_bare_repo_with_commits(root.path(), "dynamic.git", 1);
+    let state = git_server_http::SharedState::with_dynamic_registry(
+        git_server_http::AuthConfig::default(),
+        git_server_http::ServicePolicy {
+            upload_pack: true,
+            upload_pack_v2: true,
+            receive_pack: false,
+        },
+    );
+
+    let err = state
+        .register_repo(git_server_core::discovery::RepoInfo {
+            name: "dynamic.git".into(),
+            relative_path: "./team/../dynamic.git".into(),
+            absolute_path: repo_path,
+            description: None,
+        })
+        .unwrap_err();
+
+    assert!(matches!(
+        err,
+        git_server_core::error::Error::PathTraversal(_)
+    ));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn upload_pack_v2_is_disabled_by_policy() {
+    let root = TempDir::new().unwrap();
+    create_bare_repo_with_commits(root.path(), "readonly.git", 1);
+
+    let store =
+        git_server_core::discovery::RepoStore::discover(root.path().to_path_buf(), 0).unwrap();
+    let state = git_server_http::SharedState::with_store_and_auth_policy(
+        store,
+        git_server_http::AuthConfig::default(),
+        git_server_http::ServicePolicy {
+            upload_pack: true,
+            upload_pack_v2: false,
+            receive_pack: false,
+        },
+    );
+
+    let router = git_server_http::router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+    let handle = tokio::spawn(async move {
+        axum::serve(listener, router)
+            .with_graceful_shutdown(async {
+                let _ = shutdown_rx.await;
+            })
+            .await
+            .unwrap();
+    });
+
+    let response = reqwest::Client::new()
+        .get(format!(
+            "http://{addr}/readonly.git/info/refs?service=git-upload-pack"
+        ))
+        .header("Git-Protocol", "version=2")
+        .send()
+        .await
+        .expect("GET v2 info/refs when disabled");
+    assert_eq!(response.status(), 404);
+
+    let _ = shutdown_tx.send(());
+    handle.await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn git_push_is_rejected_when_receive_pack_is_disabled() {
+    let root = TempDir::new().unwrap();
+    create_bare_repo_with_commits(root.path(), "readonly.git", 1);
+
+    let store =
+        git_server_core::discovery::RepoStore::discover(root.path().to_path_buf(), 0).unwrap();
+    let state = git_server_http::SharedState::with_store_and_auth_policy(
+        store,
+        git_server_http::AuthConfig::default(),
+        git_server_http::ServicePolicy::default(),
+    );
+
+    let router = git_server_http::router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+    let handle = tokio::spawn(async move {
+        axum::serve(listener, router)
+            .with_graceful_shutdown(async {
+                let _ = shutdown_rx.await;
+            })
+            .await
+            .unwrap();
+    });
+
+    let clone_dir = TempDir::new().unwrap();
+    let clone_path = clone_dir.path().join("readonly-clone");
+    let clone = Command::new("git")
+        .args([
+            "clone",
+            &format!("http://{addr}/readonly.git"),
+            clone_path.to_str().unwrap(),
+        ])
+        .output()
+        .expect("git clone for readonly push test");
+    assert!(clone.status.success(), "git clone failed: {:?}", clone);
+
+    for (key, val) in [("user.name", "Test User"), ("user.email", "test@test.com")] {
+        let out = Command::new("git")
+            .args(["config", key, val])
+            .current_dir(&clone_path)
+            .output()
+            .expect("git config");
+        assert!(out.status.success(), "git config failed: {:?}", out);
+    }
+
+    std::fs::write(clone_path.join("push.txt"), "blocked\n").unwrap();
+    let out = Command::new("git")
+        .args(["add", "push.txt"])
+        .current_dir(&clone_path)
+        .output()
+        .expect("git add push file");
+    assert!(out.status.success(), "git add failed: {:?}", out);
+
+    let out = Command::new("git")
+        .args(["commit", "-m", "push commit"])
+        .current_dir(&clone_path)
+        .env("GIT_AUTHOR_NAME", "Test User")
+        .env("GIT_AUTHOR_EMAIL", "test@test.com")
+        .env("GIT_COMMITTER_NAME", "Test User")
+        .env("GIT_COMMITTER_EMAIL", "test@test.com")
+        .output()
+        .expect("git commit push file");
+    assert!(out.status.success(), "git commit failed: {:?}", out);
+
+    let push = Command::new("git")
+        .args(["push", "origin", "main"])
+        .current_dir(&clone_path)
+        .output()
+        .expect("git push when receive-pack disabled");
+    assert!(
+        !push.status.success(),
+        "push should fail when receive-pack is disabled"
+    );
+
+    let stderr = String::from_utf8_lossy(&push.stderr);
+    assert!(
+        stderr.contains("not found")
+            || stderr.contains("repository")
+            || stderr.contains("service")
+            || stderr.contains("未找到"),
+        "expected disabled receive-pack error, got: {stderr}"
+    );
 
     let _ = shutdown_tx.send(());
     handle.await.unwrap();
