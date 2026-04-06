@@ -37,8 +37,8 @@ pub struct HealthzResponse {
 }
 
 /// GET / -- list all discovered repositories
-pub async fn list_repos(State(store): State<SharedState>) -> Json<Vec<RepoInfo>> {
-    Json(store.list().await)
+pub async fn list_repos(State(store): State<SharedState>) -> Result<Json<Vec<RepoInfo>>, AppError> {
+    Ok(Json(store.list().await?))
 }
 
 /// GET /healthz -- lightweight readiness/liveness probe.

@@ -96,10 +96,12 @@ impl SharedState {
         Self::with_registry(registry, auth, policy)
     }
 
-    pub async fn list(&self) -> Vec<git_server_core::discovery::RepoInfo> {
+    pub async fn list(
+        &self,
+    ) -> git_server_core::error::Result<Vec<git_server_core::discovery::RepoInfo>> {
         match &self.mode {
-            RepoMode::Discovered(store) => store.read().await.list().to_vec(),
-            RepoMode::Dynamic { resolver, .. } => resolver.list().unwrap_or_default(),
+            RepoMode::Discovered(store) => Ok(store.read().await.list().to_vec()),
+            RepoMode::Dynamic { resolver, .. } => resolver.list(),
         }
     }
 
