@@ -1,6 +1,6 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1775503509582,
-  "repoUrl": "https://github.com/WJQSERVER/git-server",
+  "lastUpdate": 1775598866483,
+  "repoUrl": "https://github.com/WJQSERVER/gitserver",
   "entries": {
     "git-server Benchmarks": [
       {
@@ -263,6 +263,138 @@ window.BENCHMARK_DATA = {
             "name": "ref_advertisement/advertise/large",
             "value": 352489,
             "range": "± 2522",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "114663932+WJQSERVER@users.noreply.github.com",
+            "name": "WJQSERVER",
+            "username": "WJQSERVER"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9460fbeec82cd8c550063c43c13497f941c402f0",
+          "message": "Merge pull request #7 from WJQSERVER/dependabot/cargo/rustls-webpki-0.103.10\n\nbuild(deps): bump rustls-webpki from 0.103.9 to 0.103.10",
+          "timestamp": "2026-04-08T05:30:20+08:00",
+          "tree_id": "7789052f75c80dc1e09928c35857dbe1d36a2307",
+          "url": "https://github.com/WJQSERVER/gitserver/commit/9460fbeec82cd8c550063c43c13497f941c402f0"
+        },
+        "date": 1775598865406,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "concurrent_clones/clones/1",
+            "value": 113369244,
+            "range": "± 8234688",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "concurrent_clones/clones/2",
+            "value": 154891307,
+            "range": "± 40925421",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "concurrent_clones/clones/4",
+            "value": 251654473,
+            "range": "± 9062780",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "concurrent_clones/clones/8",
+            "value": 455761740,
+            "range": "± 7786296",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "concurrent_clones/clones/16",
+            "value": 892775107,
+            "range": "± 15636710",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "concurrent_clones/clones/32",
+            "value": 1808527257,
+            "range": "± 25080703",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "git_clone/clone/small",
+            "value": 60430190,
+            "range": "± 1051551",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "git_clone/clone/medium",
+            "value": 112929969,
+            "range": "± 8079311",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "git_clone/clone/large",
+            "value": 1796621381,
+            "range": "± 23249525",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "http_clone/clone/small",
+            "value": 85985505,
+            "range": "± 1215472",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "http_clone/clone/medium",
+            "value": 125594630,
+            "range": "± 13299740",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "http_clone/clone/large",
+            "value": 1481277861,
+            "range": "± 14962751",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pack_generation/clone/small",
+            "value": 1099649,
+            "range": "± 25241",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pack_generation/clone/medium",
+            "value": 36462999,
+            "range": "± 1446475",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pack_generation/clone/large",
+            "value": 1354406821,
+            "range": "± 7792131",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ref_advertisement/advertise/small",
+            "value": 207981,
+            "range": "± 3250",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ref_advertisement/advertise/medium",
+            "value": 270732,
+            "range": "± 12013",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ref_advertisement/advertise/large",
+            "value": 355868,
+            "range": "± 3640",
             "unit": "ns/iter"
           }
         ]
