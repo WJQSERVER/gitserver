@@ -1,8 +1,8 @@
 # gitserver
 
-基于 Rust 的无 git 依赖(非绑定)的 Git Smart HTTP 服务端实现(支持 v2), 另提供一个可选 CLI 便于本地测试.
+基于**Rust**的无 git 依赖(非绑定)的 Git Smart HTTP 服务端实现(支持 v2), 另提供一个可选 CLI 便于本地测试.
 
-gitserver 基于上游项目 [ggueret/git-server](https://github.com/ggueret/git-server). 如果你要把 Git Smart HTTP 服务接入现有 Rust 应用, 通常直接使用 `gitserver-core` 和 `gitserver-http` 两个库; 仓库里的 `gitserver` 二进制则是在此之上的一层 CLI 封装, 适合本地测试或独立运行.
+gitserver 基于上游项目 [ggueret/git-server](https://github.com/ggueret/git-server). 如果你要把 Git Smart HTTP 服务接入现有**Rust**应用, 通常直接使用 `gitserver-core` 和 `gitserver-http` 两个库; 仓库里的 `gitserver` 二进制则是在此之上的一层 CLI 封装, 适合本地测试或独立运行.
 
 ## 上游来源
 
@@ -95,7 +95,7 @@ gitserver [OPTIONS] <ROOT>
       --log-format <FORMAT>     日志格式: text 或 json [默认值: text]
   -w, --workers <N>             Tokio 工作线程数
   --max-depth <N>               仓库发现的最大目录深度 [默认值: 3]
-  --rescan-interval-secs <N>    定期重新扫描间隔(秒) [默认值: 30]
+  --rescan-interval-secs <N>    定期重新扫描间隔 (秒) [默认值: 30]
   --auth-basic-username <USER>  要求 HTTP Basic 认证用户名
   --auth-basic-password <PASS>  要求 HTTP Basic 认证密码
   --auth-bearer-token <TOKEN>   要求 Bearer 认证令牌
@@ -104,14 +104,14 @@ gitserver [OPTIONS] <ROOT>
 
 ## API
 
-| 方法   | 端点                                      | 描述                |
-| ------ | ----------------------------------------- | ------------------ |
-| GET    | `/healthz`                                | 健康检查端点        |
-| GET    | `/`                                       | 返回当前暴露的仓库列表(来自扫描或动态注册) |
-| GET    | `/{repo}/info/refs?service=git-upload-pack` | Git 引用通告        |
-| GET    | `/{repo}/info/refs?service=git-receive-pack` | Git receive-pack 通告, 默认关闭 |
-| POST   | `/{repo}/git-upload-pack`                 | Git 包传输          |
-| POST   | `/{repo}/git-receive-pack`                | 处理 Git push, 默认关闭 |
+| 方法 | 端点 | 描述 |
+|------|------|------|
+| GET | `/healthz` | 健康检查端点 |
+| GET | `/` | 返回当前暴露的仓库列表(来自扫描或动态注册) |
+| GET | `/{repo}/info/refs?service=git-upload-pack` | Git 引用通告 |
+| GET | `/{repo}/info/refs?service=git-receive-pack` | Git receive-pack 通告, 默认关闭 |
+| POST | `/{repo}/git-upload-pack` | Git 包传输 |
+| POST | `/{repo}/git-receive-pack` | 处理 Git push, 默认关闭 |
 
 仓库列表响应示例:
 

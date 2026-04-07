@@ -1,6 +1,6 @@
 # 库调用指南
 
-`gitserver-core` 和 `gitserver-http` 可以作为库嵌入到更大的 Rust 应用中，将 Git Smart HTTP 服务集成到现有系统。
+`gitserver-core` 和 `gitserver-http` 可以作为库嵌入到更大的**Rust**应用中, 将 Git Smart HTTP 服务集成到现有系统.
 
 ## 添加依赖
 
@@ -13,9 +13,9 @@ tokio = { version = "1", features = ["full"] }
 anyhow = "1"
 ```
 
-## 快速开始：发现模式
+## 快速开始: 发现模式
 
-最简单的用法是扫描一个目录，自动发现其中的裸仓库：
+最简单的用法是扫描一个目录, 自动发现其中的裸仓库:
 
 ```rust
 use gitserver_core::discovery::RepoStore;
@@ -23,7 +23,7 @@ use gitserver_http::{SharedState, router};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // 扫描 ./repos 目录，最大深度 3
+    // 扫描 ./repos 目录, 最大深度 3
     let store = RepoStore::discover("./repos".into(), 3)?;
 
     // 创建共享状态并构建路由
@@ -57,7 +57,7 @@ let state = SharedState::with_auth(store, AuthConfig {
 let app = router(state);
 ```
 
-Basic 和 Bearer 认证可以同时配置，任一通过即可。
+Basic 和 Bearer 认证可以同时配置, 任一通过即可.
 
 ## 配置服务策略
 
@@ -70,14 +70,14 @@ let state = SharedState::with_store_and_auth_policy(
     ServicePolicy {
         upload_pack: true,       // clone/fetch
         upload_pack_v2: true,    // 协议 v2
-        receive_pack: true,      // push（默认关闭）
+        receive_pack: true,      // push (默认关闭)
     },
 );
 ```
 
-## 动态模式：手动注册仓库
+## 动态模式: 手动注册仓库
 
-适合多租户场景，不需要文件系统扫描：
+适合多租户场景, 不需要文件系统扫描:
 
 ```rust
 use std::sync::Arc;
@@ -93,7 +93,7 @@ let state = SharedState::with_registry(
     ServicePolicy::default(),
 );
 
-// 注册仓库（会验证路径是否为裸仓库）
+// 注册仓库 (会验证路径是否为裸仓库)
 registry.register(RepoInfo {
     name: "my-project.git".into(),
     relative_path: "tenant-a/my-project.git".into(),
@@ -107,7 +107,7 @@ registry.unregister("tenant-a/my-project.git")?;
 let app = router(state);
 ```
 
-也可以使用快捷方法：
+也可以使用快捷方法:
 
 ```rust
 let state = SharedState::with_dynamic_registry(
@@ -126,7 +126,7 @@ state.register_repo(RepoInfo {
 
 ## 嵌入到现有 Axum 路由
 
-`router()` 返回的标准 Axum `Router` 可以嵌套到更大的应用中：
+`router()` 返回的标准 Axum `Router` 可以嵌套到更大的应用中:
 
 ```rust
 use axum::Router;
@@ -146,7 +146,7 @@ let app = Router::new()
 
 ## 直接使用公开处理器
 
-如果你已经在用 Axum，想自行组装部分 Git 路由，可以直接调用 `handlers` 模块里公开的处理函数：
+如果你已经在用 Axum, 想自行组装部分 Git 路由, 可以直接调用 `handlers` 模块里公开的处理函数:
 
 ```rust
 use axum::http::{HeaderMap, StatusCode};
@@ -174,7 +174,7 @@ let response = info_refs_endpoint(
 
 ## 后台定期刷新
 
-发现模式支持运行时刷新仓库列表；动态模式不需要、也不支持 `refresh()`：
+发现模式支持运行时刷新仓库列表; 动态模式不需要, 也不支持 `refresh()`:
 
 ```rust
 use tokio::time::{interval, Duration, MissedTickBehavior};
@@ -196,7 +196,7 @@ tokio::spawn(async move {
 
 ## 直接使用 gitserver-core
 
-如果只需要 Git 协议操作而不需要 HTTP 层，可以直接使用 `gitserver-core`：
+如果只需要 Git 协议操作而不需要 HTTP 层, 可以直接使用 `gitserver-core`:
 
 ```rust
 use gitserver_core::{
