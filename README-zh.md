@@ -24,6 +24,8 @@
 ## 快速开始
 
 ```sh
+git clone https://github.com/WJQSERVER/gitserver.git gitserver
+cd gitserver
 cargo install --path crates/gitserver
 
 # 提供 ./repos 目录下所有裸仓库服务
@@ -62,9 +64,9 @@ gitserver [OPTIONS] <ROOT>
 | GET    | `/healthz`                                | 健康检查端点        |
 | GET    | `/`                                       | 返回已发现仓库的 JSON 数组 |
 | GET    | `/{repo}/info/refs?service=git-upload-pack` | Git 引用通告        |
-| GET    | `/{repo}/info/refs?service=git-receive-pack` | Git receive-pack 通告 |
+| GET    | `/{repo}/info/refs?service=git-receive-pack` | Git receive-pack 通告，默认关闭 |
 | POST   | `/{repo}/git-upload-pack`                 | Git 包传输          |
-| POST   | `/{repo}/git-receive-pack`                | 处理 Git push       |
+| POST   | `/{repo}/git-receive-pack`                | 处理 Git push，默认关闭 |
 
 仓库列表响应示例：
 
@@ -100,8 +102,8 @@ gitserver [OPTIONS] <ROOT>
 ## 从源码构建
 
 ```sh
-git clone https://github.com/WJQSERVER/git-server.git
-cd git-server
+git clone https://github.com/WJQSERVER/gitserver.git gitserver
+cd gitserver
 cargo build --release
 ```
 
@@ -110,7 +112,7 @@ cargo build --release
 ## 运行测试
 
 ```sh
-cargo test --workspace
+cargo test --workspace --all-features
 ```
 
 测试套件包括单元测试、集成测试（针对运行中的服务器执行 `git clone`/`git fetch`）和负载测试（并发克隆）。

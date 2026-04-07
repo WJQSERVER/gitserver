@@ -55,6 +55,8 @@ GET /{repo}/info/refs?service=git-upload-pack
 GET /{repo}/info/refs?service=git-receive-pack
 ```
 
+`git-receive-pack` is disabled by default and requires `--enable-receive-pack`.
+
 Returns the Git ref advertisement used for the initial handshake in `git clone` and `git fetch`.
 
 **Request Headers:**
@@ -93,6 +95,8 @@ The response body is a stream of side-band-64k framed pack data.
 ```
 POST /{repo}/git-receive-pack
 ```
+
+This endpoint is disabled by default and requires `--enable-receive-pack`.
 
 Receives pack data pushed by the client and updates references. Must be enabled via `--enable-receive-pack`.
 

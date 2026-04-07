@@ -8,8 +8,8 @@
 ## Install from Source
 
 ```sh
-git clone https://github.com/WJQSERVER/git-server.git
-cd git-server
+git clone https://github.com/WJQSERVER/gitserver.git gitserver
+cd gitserver
 cargo install --path crates/gitserver
 ```
 
@@ -38,14 +38,14 @@ Add dependencies in your `Cargo.toml`:
 
 ```toml
 [dependencies]
-gitserver-core = { git = "https://github.com/WJQSERVER/git-server" }
-gitserver-http = { git = "https://github.com/WJQSERVER/git-server" }
+gitserver-core = { git = "https://github.com/WJQSERVER/gitserver" }
+gitserver-http = { git = "https://github.com/WJQSERVER/gitserver" }
 ```
 
 ## Running Tests
 
 ```sh
-cargo test --all-features
+cargo test --workspace --all-features
 ```
 
 The test suite covers unit tests, integration tests (`git clone`/`git fetch`), and load tests.

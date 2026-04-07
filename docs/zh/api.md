@@ -55,6 +55,8 @@ GET /{repo}/info/refs?service=git-upload-pack
 GET /{repo}/info/refs?service=git-receive-pack
 ```
 
+`git-receive-pack` 默认关闭，需通过 `--enable-receive-pack` 启用。
+
 返回 Git 引用通告，用于 `git clone` 和 `git fetch` 的初始握手。
 
 **请求头：**
@@ -93,6 +95,8 @@ POST /{repo}/git-upload-pack
 ```
 POST /{repo}/git-receive-pack
 ```
+
+该端点默认关闭，需通过 `--enable-receive-pack` 启用。
 
 接收客户端推送的 pack 数据并更新引用。需要通过 `--enable-receive-pack` 启用。
 

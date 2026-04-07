@@ -3,7 +3,7 @@
 ## 项目结构
 
 ```
-gitserver/
+repo/
 ├── crates/
 │   ├── gitserver/          # CLI 二进制入口
 │   ├── gitserver-core/     # Git 协议操作核心

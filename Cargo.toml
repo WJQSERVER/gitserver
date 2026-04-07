@@ -11,7 +11,7 @@ members = [
 version = "0.1.0"
 edition = "2024"
 license = "MPL-2.0"
-repository = "https://github.com/WJQSERVER/git-server"
+repository = "https://github.com/WJQSERVER/gitserver"
 
 [workspace.dependencies]
 gitserver-core = { path = "crates/gitserver-core", version = "0.1.0" }

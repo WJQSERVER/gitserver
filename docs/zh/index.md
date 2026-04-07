@@ -10,5 +10,5 @@
 
 ## 其他资源
 
-- [GitHub 仓库](https://github.com/WJQSERVER/git-server)
+- [GitHub 仓库](https://github.com/WJQSERVER/gitserver)
 - [English Documentation](../en/index.md)

@@ -6,8 +6,8 @@
 
 ```toml
 [dependencies]
-gitserver-core = { git = "https://github.com/WJQSERVER/git-server" }
-gitserver-http = { git = "https://github.com/WJQSERVER/git-server" }
+gitserver-core = { git = "https://github.com/WJQSERVER/gitserver" }
+gitserver-http = { git = "https://github.com/WJQSERVER/gitserver" }
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
 anyhow = "1"

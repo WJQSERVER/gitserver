@@ -12,14 +12,14 @@ body = """
 ### Breaking Changes
 {% for commit in commits | filter(attribute="breaking", value=true) | unique(attribute="message") -%}
 - {% if commit.scope %}**{{ commit.scope }}:** {% endif %}{{ commit.message | split(pat="\n") | first | trim | upper_first }}\
-  {%- if commit.remote.pr_number %} ([#{{ commit.remote.pr_number }}](https://github.com/WJQSERVER/git-server/pull/{{ commit.remote.pr_number }})){% endif %}
+  {%- if commit.remote.pr_number %} ([#{{ commit.remote.pr_number }}](https://github.com/WJQSERVER/gitserver/pull/{{ commit.remote.pr_number }})){% endif %}
 {% endfor -%}
 {%- endif %}
 {% for group, commits in commits | filter(attribute="breaking", value=false) | group_by(attribute="group") %}
 ### {{ group | upper_first }}
 {% for commit in commits | unique(attribute="message") -%}
 - {% if commit.scope %}**{{ commit.scope }}:** {% endif %}{{ commit.message | split(pat="\n") | first | trim | upper_first }}\
-  {%- if commit.remote.pr_number %} ([#{{ commit.remote.pr_number }}](https://github.com/WJQSERVER/git-server/pull/{{ commit.remote.pr_number }})){% endif %}
+  {%- if commit.remote.pr_number %} ([#{{ commit.remote.pr_number }}](https://github.com/WJQSERVER/gitserver/pull/{{ commit.remote.pr_number }})){% endif %}
 {% endfor %}
 {% endfor -%}
 """
@@ -28,9 +28,9 @@ footer = """
 {%- for release in releases -%}
     {% if release.version %}
         {% if release.previous.version %}
-[{{ release.version | trim_start_matches(pat="v") }}]: https://github.com/WJQSERVER/git-server/compare/{{ release.previous.version }}...{{ release.version }}
+[{{ release.version | trim_start_matches(pat="v") }}]: https://github.com/WJQSERVER/gitserver/compare/{{ release.previous.version }}...{{ release.version }}
         {%- else %}
-[{{ release.version | trim_start_matches(pat="v") }}]: https://github.com/WJQSERVER/git-server/tree/{{ release.version }}
+[{{ release.version | trim_start_matches(pat="v") }}]: https://github.com/WJQSERVER/gitserver/tree/{{ release.version }}
         {%- endif %}
     {%- endif %}
 {%- endfor %}

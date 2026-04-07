@@ -10,5 +10,5 @@
 
 ## Additional Resources
 
-- [GitHub Repository](https://github.com/WJQSERVER/git-server)
+- [GitHub Repository](https://github.com/WJQSERVER/gitserver)
 - [中文文档](../zh/index.md)

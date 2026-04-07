@@ -8,8 +8,8 @@
 ## 从源码安装
 
 ```sh
-git clone https://github.com/WJQSERVER/git-server.git
-cd git-server
+git clone https://github.com/WJQSERVER/gitserver.git gitserver
+cd gitserver
 cargo install --path crates/gitserver
 ```
 
@@ -38,14 +38,14 @@ cargo build --release
 
 ```toml
 [dependencies]
-gitserver-core = { git = "https://github.com/WJQSERVER/git-server" }
-gitserver-http = { git = "https://github.com/WJQSERVER/git-server" }
+gitserver-core = { git = "https://github.com/WJQSERVER/gitserver" }
+gitserver-http = { git = "https://github.com/WJQSERVER/gitserver" }
 ```
 
 ## 运行测试
 
 ```sh
-cargo test --all-features
+cargo test --workspace --all-features
 ```
 
 测试覆盖单元测试、集成测试（`git clone`/`git fetch`）和负载测试。

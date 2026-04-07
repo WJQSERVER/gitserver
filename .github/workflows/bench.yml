@@ -24,16 +24,16 @@ jobs:
 
       - name: Run benchmarks (PR - small+medium only)
         if: github.event_name == 'pull_request'
-        run: cargo bench -p git-server-bench -- --output-format bencher "small|medium" | tee output.txt
+        run: cargo bench -p gitserver-bench -- --output-format bencher "small|medium" | tee output.txt
 
       - name: Run benchmarks (main - all sizes)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: cargo bench -p git-server-bench -- --output-format bencher | tee output.txt
+        run: cargo bench -p gitserver-bench -- --output-format bencher | tee output.txt
 
       - name: Store benchmark result
         uses: benchmark-action/github-action-benchmark@v1
         with:
-          name: git-server Benchmarks
+          name: gitserver Benchmarks
           tool: cargo
           output-file-path: output.txt
           github-token: ${{ secrets.GITHUB_TOKEN }}

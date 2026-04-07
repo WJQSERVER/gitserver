@@ -3,7 +3,7 @@
 ## Project Structure
 
 ```
-gitserver/
+repo/
 ├── crates/
 │   ├── gitserver/          # CLI binary entry point
 │   ├── gitserver-core/     # Core Git protocol operations

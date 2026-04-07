@@ -24,6 +24,8 @@ Smart HTTP Git server for local testing, with no `git` runtime dependency.
 ## Quick start
 
 ```sh
+git clone https://github.com/WJQSERVER/gitserver.git gitserver
+cd gitserver
 cargo install --path crates/gitserver
 
 # Serve all bare repos under ./repos
@@ -62,9 +64,9 @@ Options:
 | GET | `/healthz` | Health check endpoint |
 | GET | `/` | JSON array of discovered repositories |
 | GET | `/{repo}/info/refs?service=git-upload-pack` | Git ref advertisement |
-| GET | `/{repo}/info/refs?service=git-receive-pack` | Git receive-pack advertisement |
+| GET | `/{repo}/info/refs?service=git-receive-pack` | Git receive-pack advertisement, disabled by default |
 | POST | `/{repo}/git-upload-pack` | Git pack negotiation |
-| POST | `/{repo}/git-receive-pack` | Git push handling |
+| POST | `/{repo}/git-receive-pack` | Git push handling, disabled by default |
 
 Repository listing response:
 
@@ -100,8 +102,8 @@ Full documentation is available in [English](docs/en/index.md) and [Chinese](doc
 ## Building from source
 
 ```sh
-git clone https://github.com/WJQSERVER/git-server.git
-cd git-server
+git clone https://github.com/WJQSERVER/gitserver.git gitserver
+cd gitserver
 cargo build --release
 ```
 
@@ -110,7 +112,7 @@ The binary is at `target/release/gitserver`.
 ## Running tests
 
 ```sh
-cargo test --workspace
+cargo test --workspace --all-features
 ```
 
 The test suite includes unit tests, integration tests (`git clone`/`git fetch` against a running server), and load tests (concurrent clones).
