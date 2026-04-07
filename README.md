@@ -1,6 +1,6 @@
 # gitserver
 
-Rust implementation libraries for a Git Smart HTTP server with no runtime `git` dependency and protocol v2 support, plus an optional CLI for local testing.
+Rust implementation of a Git Smart HTTP server that does not require an installed `git` binary, with protocol v2 support, plus an optional CLI for local testing.
 
 `gitserver` is based on the upstream [ggueret/git-server](https://github.com/ggueret/git-server) project. Most users will interact with the `gitserver-core` and `gitserver-http` libraries, which embed Git Smart HTTP serving into an existing Rust application. The `gitserver` binary is a small wrapper around the same stack for local testing and standalone use.
 

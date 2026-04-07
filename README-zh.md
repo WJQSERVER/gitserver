@@ -1,6 +1,6 @@
 # gitserver
 
-基于 Rust 的无 git 依赖（非绑定）的 Git Smart HTTP 服务端实现库（支持 v2），同时提供一个用于本地测试的可选 CLI。
+基于 Rust 的 Git Smart HTTP 服务端实现（支持 v2），无需安装 git 命令行工具，另提供一个可选 CLI 便于本地测试。
 
 `gitserver` 基于上游项目 [ggueret/git-server](https://github.com/ggueret/git-server)。如果你要把 Git Smart HTTP 服务接入现有 Rust 应用，通常直接使用 `gitserver-core` 和 `gitserver-http` 两个库；仓库里的 `gitserver` 二进制则是在此之上的一层 CLI 封装，适合本地测试或独立运行。
 
