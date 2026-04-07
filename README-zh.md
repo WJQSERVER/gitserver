@@ -1,8 +1,8 @@
 # gitserver
 
-适用于本地测试、运行时无需 git 的 smart HTTP Git 服务器。
+基于 Rust 的无 git 依赖（非绑定）的 Git Smart HTTP 服务端实现库（支持 v2），同时提供一个用于本地测试的可选 CLI。
 
-`gitserver` 基于上游项目 [ggueret/git-server](https://github.com/ggueret/git-server)。它通过 HTTP 提供裸 Git 仓库的 `git clone` 和 `git fetch` 服务，运行时不需要 `git` 二进制文件。项目基于 [gitoxide](https://github.com/GitoxideLabs/gitoxide) 实现原生 Git 操作，采用 [Axum](https://github.com/tokio-rs/axum) / [Tokio](https://tokio.rs) 提供异步 HTTP 服务。
+`gitserver` 基于上游项目 [ggueret/git-server](https://github.com/ggueret/git-server)。如果你要把 Git Smart HTTP 服务接入现有 Rust 应用，通常直接使用 `gitserver-core` 和 `gitserver-http` 两个库；仓库里的 `gitserver` 二进制则是在此之上的一层 CLI 封装，适合本地测试或独立运行。
 
 ## 上游来源
 
@@ -16,12 +16,51 @@
 
 ## 特性
 
-- **单二进制文件，无需 git** -- 所有 Git 操作均原生处理，无运行时依赖
-- **多仓库支持** -- 服务于根目录下的所有裸仓库，扫描深度可配置
-- **JSON API** -- 提供仓库列表端点，支持程序化发现
-- **结构化日志** -- 支持文本或 JSON 格式的日志输出
+- **库优先设计** -- 直接在现有 Axum/Tokio 应用中使用 `gitserver-core` 和 `gitserver-http`
+- **原生 Git 操作** -- 支持 clone、fetch、protocol v2，以及可选的 receive-pack，运行时无需 `git`
+- **仓库发现与动态注册** -- 既可以扫描文件系统，也可以在进程内手动注册仓库
+- **可选 CLI** -- 当你需要独立进程时，可直接运行同一套库构成的服务器
 
-## 快速开始
+## 库快速开始
+
+添加依赖：
+
+```toml
+[dependencies]
+gitserver-core = { git = "https://github.com/WJQSERVER/gitserver" }
+gitserver-http = { git = "https://github.com/WJQSERVER/gitserver" }
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+anyhow = "1"
+```
+
+把服务嵌入到 Axum 应用中：
+
+```rust
+use gitserver_core::discovery::RepoStore;
+use gitserver_http::{SharedState, router};
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let store = RepoStore::discover("./repos".into(), 3)?;
+    let state = SharedState::new(store);
+    let app = router(state);
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await?;
+    axum::serve(listener, app).await?;
+    Ok(())
+}
+```
+
+如果你需要更细粒度的控制：
+
+- `gitserver-core` 负责协议操作、仓库发现、路径校验、protocol v2 和 receive-pack
+- `gitserver-http` 提供 `SharedState`、认证/策略配置，以及 Axum 路由与处理器
+- `gitserver` 是构建在这些库之上的 CLI 二进制文件
+
+更完整的嵌入式用法见 [库调用指南](docs/zh/library.md)。
+
+## CLI 快速开始
 
 ```sh
 git clone https://github.com/WJQSERVER/gitserver.git gitserver
@@ -35,7 +74,9 @@ gitserver ./repos
 git clone http://127.0.0.1:3000/my-project.git
 ```
 
-## 使用方法
+如果你想直接跑一个独立服务，就用 CLI；如果你是把能力嵌入现有应用，则不需要它。
+
+## CLI 使用方法
 
 ```
 gitserver [OPTIONS] <ROOT>
@@ -62,7 +103,7 @@ gitserver [OPTIONS] <ROOT>
 | 方法   | 端点                                      | 描述                |
 | ------ | ----------------------------------------- | ------------------ |
 | GET    | `/healthz`                                | 健康检查端点        |
-| GET    | `/`                                       | 返回已发现仓库的 JSON 数组 |
+| GET    | `/`                                       | 返回当前暴露的仓库列表（来自扫描或动态注册） |
 | GET    | `/{repo}/info/refs?service=git-upload-pack` | Git 引用通告        |
 | GET    | `/{repo}/info/refs?service=git-receive-pack` | Git receive-pack 通告，默认关闭 |
 | POST   | `/{repo}/git-upload-pack`                 | Git 包传输          |
@@ -85,19 +126,19 @@ gitserver [OPTIONS] <ROOT>
 项目组织为 Cargo 工作空间，包含四个 crate：
 
 - **gitserver-core** -- Git 协议操作（引用通告、包生成）、仓库发现、路径安全
-- **gitserver-http** -- Axum HTTP 路由、处理器、错误响应
-- **gitserver** -- CLI 二进制文件、tracing 设置、服务器组装
+- **gitserver-http** -- Axum HTTP 路由、处理器、认证/策略配置、共享状态
+- **gitserver** -- 对上述库做独立服务器组装的薄 CLI 封装
 - **gitserver-bench** -- 性能基准测试
 
 ## 文档
 
 完整文档见[中文版](docs/zh/index.md)和[英文版](docs/en/index.md)：
 
+- [库调用指南](docs/zh/library.md)
 - [安装指南](docs/zh/installation.md)
 - [使用指南](docs/zh/usage.md)
 - [API 参考](docs/zh/api.md)
 - [架构设计](docs/zh/architecture.md)
-- [库调用指南](docs/zh/library.md)
 
 ## 从源码构建
 

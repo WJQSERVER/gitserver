@@ -144,9 +144,9 @@ let app = Router::new()
     ;
 ```
 
-## 使用底层处理器
+## 直接使用公开处理器
 
-如果需要对请求处理有更多控制，可以直接调用 `handlers` 模块中的函数：
+如果你已经在用 Axum，想自行组装部分 Git 路由，可以直接调用 `handlers` 模块里公开的处理函数：
 
 ```rust
 use axum::http::{HeaderMap, StatusCode};
@@ -174,7 +174,7 @@ let response = info_refs_endpoint(
 
 ## 后台定期刷新
 
-发现模式支持运行时刷新仓库列表：
+发现模式支持运行时刷新仓库列表；动态模式不需要、也不支持 `refresh()`：
 
 ```rust
 use tokio::time::{interval, Duration, MissedTickBehavior};

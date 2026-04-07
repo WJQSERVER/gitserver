@@ -1,6 +1,6 @@
 # Library Usage Guide
 
-`gitserver-core` and `gitserver-http` can be embedded as libraries in larger Rust applications, integrating Git Smart HTTP serving into existing systems.
+`gitserver-core` and `gitserver-http` let you add Git Smart HTTP serving to an existing Rust service.
 
 ## Add Dependencies
 
@@ -77,7 +77,7 @@ let state = SharedState::with_store_and_auth_policy(
 
 ## Dynamic Mode: Manual Repository Registration
 
-Suited for multi-tenant scenarios where filesystem scanning is not desired:
+Use this when your application decides which repositories exist instead of scanning a directory:
 
 ```rust
 use std::sync::Arc;
