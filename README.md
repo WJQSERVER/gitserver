@@ -1,8 +1,18 @@
-# git-server
+# gitserver
 
-Dependency-free smart HTTP Git server for local testing.
+Smart HTTP Git server for local testing, with no `git` runtime dependency.
 
-A standalone server that serves bare Git repositories over HTTP for `git clone` and `git fetch`, without requiring the `git` binary at runtime. Built with [gitoxide](https://github.com/GitoxideLabs/gitoxide) for native Git operations and [Axum](https://github.com/tokio-rs/axum) / [Tokio](https://tokio.rs) for asynchronous HTTP.
+`gitserver` is based on the upstream [ggueret/git-server](https://github.com/ggueret/git-server) project. It serves bare Git repositories over HTTP for `git clone` and `git fetch`, without requiring the `git` binary at runtime. It is built with [gitoxide](https://github.com/GitoxideLabs/gitoxide) for native Git operations and [Axum](https://github.com/tokio-rs/axum) / [Tokio](https://tokio.rs) for asynchronous HTTP.
+
+## Origin
+
+- Upstream project: [`ggueret/git-server`](https://github.com/ggueret/git-server)
+
+## License
+
+- Primary repository license: MPL-2.0. See `LICENSE`.
+- This repository includes material based on the upstream project `ggueret/git-server`; the original MIT license text is preserved in `LICENSE-UPSTREAM-MIT` and in each crate's `license/UPSTREAM-LICENSE`.
+- Files created in this repository use MPL-2.0 notices where applicable. Preserved upstream notices and license files continue to apply to inherited upstream material.
 
 ## Features
 
@@ -14,10 +24,10 @@ A standalone server that serves bare Git repositories over HTTP for `git clone` 
 ## Quick start
 
 ```sh
-cargo install --path crates/git-server
+cargo install --path crates/gitserver
 
 # Serve all bare repos under ./repos
-git-server ./repos
+gitserver ./repos
 
 # Clone from the server
 git clone http://127.0.0.1:3000/my-project.git
@@ -26,7 +36,7 @@ git clone http://127.0.0.1:3000/my-project.git
 ## Usage
 
 ```
-git-server [OPTIONS] <ROOT>
+gitserver [OPTIONS] <ROOT>
 
 Arguments:
   <ROOT>  Root directory containing bare Git repositories
@@ -72,10 +82,10 @@ Repository listing response:
 
 The project is organized as a Cargo workspace with four crates:
 
-- **git-server-core** -- Git protocol operations (ref advertisement, pack generation), repository discovery, path security
-- **git-server-http** -- Axum HTTP routing, handlers, error responses
-- **git-server** -- CLI binary, tracing setup, server assembly
-- **git-server-bench** -- Performance benchmarks
+- **gitserver-core** -- Git protocol operations (ref advertisement, pack generation), repository discovery, path security
+- **gitserver-http** -- Axum HTTP routing, handlers, error responses
+- **gitserver** -- CLI binary, tracing setup, server assembly
+- **gitserver-bench** -- Performance benchmarks
 
 ## Documentation
 
@@ -95,7 +105,7 @@ cd git-server
 cargo build --release
 ```
 
-The binary is at `target/release/git-server`.
+The binary is at `target/release/gitserver`.
 
 ## Running tests
 

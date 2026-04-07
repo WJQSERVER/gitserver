@@ -1,8 +1,18 @@
-# git-server
+# gitserver
 
-无需依赖的 smart HTTP Git 服务器，适用于本地测试。
+适用于本地测试、运行时无需 git 的 smart HTTP Git 服务器。
 
-一个独立的服务器，通过 HTTP 提供裸 Git 仓库的 `git clone` 和 `git fetch` 服务，运行时不需要 `git` 二进制文件。基于 [gitoxide](https://github.com/GitoxideLabs/gitoxide) 实现原生 Git 操作，采用 [Axum](https://github.com/tokio-rs/axum) / [Tokio](https://tokio.rs) 实现异步 HTTP 服务。
+`gitserver` 基于上游项目 [ggueret/git-server](https://github.com/ggueret/git-server)。它通过 HTTP 提供裸 Git 仓库的 `git clone` 和 `git fetch` 服务，运行时不需要 `git` 二进制文件。项目基于 [gitoxide](https://github.com/GitoxideLabs/gitoxide) 实现原生 Git 操作，采用 [Axum](https://github.com/tokio-rs/axum) / [Tokio](https://tokio.rs) 提供异步 HTTP 服务。
+
+## 上游来源
+
+- 上游项目：[`ggueret/git-server`](https://github.com/ggueret/git-server)
+
+## 许可证
+
+- 本仓库以 MPL-2.0 作为主许可证，见 `LICENSE`。
+- 本仓库包含源自上游项目 `ggueret/git-server` 的代码；原始 MIT 许可证文本保存在 `LICENSE-UPSTREAM-MIT` 以及各 crate 的 `license/UPSTREAM-LICENSE` 中。
+- 由本仓库创建的文件会在适用处带有 MPL-2.0 声明；继承自上游的文件仍以其保留的声明和许可证文件为准。
 
 ## 特性
 
@@ -14,10 +24,10 @@
 ## 快速开始
 
 ```sh
-cargo install --path crates/git-server
+cargo install --path crates/gitserver
 
 # 提供 ./repos 目录下所有裸仓库服务
-git-server ./repos
+gitserver ./repos
 
 # 从服务器克隆
 git clone http://127.0.0.1:3000/my-project.git
@@ -26,7 +36,7 @@ git clone http://127.0.0.1:3000/my-project.git
 ## 使用方法
 
 ```
-git-server [OPTIONS] <ROOT>
+gitserver [OPTIONS] <ROOT>
 
 参数:
   <ROOT>            包含裸 Git 仓库的根目录
@@ -72,14 +82,14 @@ git-server [OPTIONS] <ROOT>
 
 项目组织为 Cargo 工作空间，包含四个 crate：
 
-- **git-server-core** -- Git 协议操作（引用通告、包生成）、仓库发现、路径安全
-- **git-server-http** -- Axum HTTP 路由、处理器、错误响应
-- **git-server** -- CLI 二进制文件、tracing 设置、服务器组装
-- **git-server-bench** -- 性能基准测试
+- **gitserver-core** -- Git 协议操作（引用通告、包生成）、仓库发现、路径安全
+- **gitserver-http** -- Axum HTTP 路由、处理器、错误响应
+- **gitserver** -- CLI 二进制文件、tracing 设置、服务器组装
+- **gitserver-bench** -- 性能基准测试
 
 ## 文档
 
-完整文档提供[中文版](docs/zh/index.md)和[英文版](docs/en/index.md)：
+完整文档见[中文版](docs/zh/index.md)和[英文版](docs/en/index.md)：
 
 - [安装指南](docs/zh/installation.md)
 - [使用指南](docs/zh/usage.md)
@@ -95,7 +105,7 @@ cd git-server
 cargo build --release
 ```
 
-二进制文件位于 `target/release/git-server`。
+二进制文件位于 `target/release/gitserver`。
 
 ## 运行测试
 
@@ -104,4 +114,3 @@ cargo test --workspace
 ```
 
 测试套件包括单元测试、集成测试（针对运行中的服务器执行 `git clone`/`git fetch`）和负载测试（并发克隆）。
-

@@ -1,13 +1,13 @@
 # 库调用指南
 
-`git-server-core` 和 `git-server-http` 可以作为库嵌入到更大的 Rust 应用中，将 Git Smart HTTP 服务集成到现有系统。
+`gitserver-core` 和 `gitserver-http` 可以作为库嵌入到更大的 Rust 应用中，将 Git Smart HTTP 服务集成到现有系统。
 
 ## 添加依赖
 
 ```toml
 [dependencies]
-git-server-core = { git = "https://github.com/WJQSERVER/git-server" }
-git-server-http = { git = "https://github.com/WJQSERVER/git-server" }
+gitserver-core = { git = "https://github.com/WJQSERVER/git-server" }
+gitserver-http = { git = "https://github.com/WJQSERVER/git-server" }
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
 anyhow = "1"
@@ -18,8 +18,8 @@ anyhow = "1"
 最简单的用法是扫描一个目录，自动发现其中的裸仓库：
 
 ```rust
-use git_server_core::discovery::RepoStore;
-use git_server_http::{SharedState, router};
+use gitserver_core::discovery::RepoStore;
+use gitserver_http::{SharedState, router};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -41,8 +41,8 @@ async fn main() -> anyhow::Result<()> {
 ## 配置认证
 
 ```rust
-use git_server_core::discovery::RepoStore;
-use git_server_http::{SharedState, router, AuthConfig, BasicAuthConfig};
+use gitserver_core::discovery::RepoStore;
+use gitserver_http::{SharedState, router, AuthConfig, BasicAuthConfig};
 
 let store = RepoStore::discover("./repos".into(), 3)?;
 
@@ -62,7 +62,7 @@ Basic 和 Bearer 认证可以同时配置，任一通过即可。
 ## 配置服务策略
 
 ```rust
-use git_server_http::{SharedState, ServicePolicy, AuthConfig};
+use gitserver_http::{SharedState, ServicePolicy, AuthConfig};
 
 let state = SharedState::with_store_and_auth_policy(
     store,
@@ -81,8 +81,8 @@ let state = SharedState::with_store_and_auth_policy(
 
 ```rust
 use std::sync::Arc;
-use git_server_core::discovery::{DynamicRepoRegistry, MutableRepoRegistry, RepoInfo};
-use git_server_http::{SharedState, router, ServicePolicy, AuthConfig};
+use gitserver_core::discovery::{DynamicRepoRegistry, MutableRepoRegistry, RepoInfo};
+use gitserver_http::{SharedState, router, ServicePolicy, AuthConfig};
 
 // 创建空注册表
 let registry = Arc::new(DynamicRepoRegistry::new());
@@ -130,8 +130,8 @@ state.register_repo(RepoInfo {
 
 ```rust
 use axum::Router;
-use git_server_core::discovery::RepoStore;
-use git_server_http::{SharedState, router};
+use gitserver_core::discovery::RepoStore;
+use gitserver_http::{SharedState, router};
 
 let store = RepoStore::discover("./repos".into(), 3)?;
 let git_state = SharedState::new(store);
@@ -150,8 +150,8 @@ let app = Router::new()
 
 ```rust
 use axum::http::{HeaderMap, StatusCode};
-use git_server_core::discovery::RepoStore;
-use git_server_http::{
+use gitserver_core::discovery::RepoStore;
+use gitserver_http::{
     SharedState, ServicePolicy, AuthConfig,
     handlers::{info_refs_endpoint, ServiceKind},
 };
@@ -194,12 +194,12 @@ tokio::spawn(async move {
 });
 ```
 
-## 直接使用 git-server-core
+## 直接使用 gitserver-core
 
-如果只需要 Git 协议操作而不需要 HTTP 层，可以直接使用 `git-server-core`：
+如果只需要 Git 协议操作而不需要 HTTP 层，可以直接使用 `gitserver-core`：
 
 ```rust
-use git_server_core::{
+use gitserver_core::{
     discovery::RepoStore,
     backend::GitBackend,
     pack::{UploadPackRequest, UploadPackCapabilities, ShallowRequest},

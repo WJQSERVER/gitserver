@@ -1,21 +1,21 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/git-server-core",
-    "crates/git-server-http",
-    "crates/git-server",
-    "crates/git-server-bench",
+    "crates/gitserver-core",
+    "crates/gitserver-http",
+    "crates/gitserver",
+    "crates/gitserver-bench",
 ]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-license = "MIT"
-repository = "https://github.com/ggueret/git-server"
+license = "MPL-2.0"
+repository = "https://github.com/WJQSERVER/git-server"
 
 [workspace.dependencies]
-git-server-core = { path = "crates/git-server-core", version = "0.1.0" }
-git-server-http = { path = "crates/git-server-http", version = "0.1.0" }
+gitserver-core = { path = "crates/gitserver-core", version = "0.1.0" }
+gitserver-http = { path = "crates/gitserver-http", version = "0.1.0" }
 gix = "0.80.0"
 axum = "0.8.8"
 tokio = { version = "1.50.0", features = ["full"] }

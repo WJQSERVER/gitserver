@@ -3,12 +3,12 @@
 ## Project Structure
 
 ```
-git-server/
+gitserver/
 ├── crates/
-│   ├── git-server/          # CLI binary entry point
-│   ├── git-server-core/     # Core Git protocol operations
-│   ├── git-server-http/     # HTTP layer (Axum)
-│   └── git-server-bench/    # Performance benchmarks
+│   ├── gitserver/          # CLI binary entry point
+│   ├── gitserver-core/     # Core Git protocol operations
+│   ├── gitserver-http/     # HTTP layer (Axum)
+│   └── gitserver-bench/    # Performance benchmarks
 ├── docs/
 │   ├── zh/                  # Chinese documentation
 │   └── en/                  # English documentation
@@ -18,7 +18,7 @@ git-server/
 
 ## Crate Responsibilities
 
-### git-server-core
+### gitserver-core
 
 Core Git protocol operations library, with no HTTP framework dependency.
 
@@ -34,7 +34,7 @@ Core Git protocol operations library, with no HTTP framework dependency.
 | `path` | Path safety validation to prevent directory traversal |
 | `error` | Unified error types |
 
-### git-server-http
+### gitserver-http
 
 Axum-based HTTP layer exposing core operations as HTTP endpoints.
 
@@ -44,7 +44,7 @@ Axum-based HTTP layer exposing core operations as HTTP endpoints.
 | `error` | `AppError` enum mapping core errors to HTTP status codes |
 | `lib` | `SharedState`, `router` function, auth config, service policy |
 
-### git-server
+### gitserver
 
 CLI binary entry point, responsible for:
 
@@ -55,7 +55,7 @@ CLI binary entry point, responsible for:
 - Spawning the background periodic rescan task
 - Binding the TCP listener and serving
 
-### git-server-bench
+### gitserver-bench
 
 Performance benchmarks, not published. Includes:
 

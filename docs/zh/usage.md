@@ -3,7 +3,7 @@
 ## 基本用法
 
 ```sh
-git-server [OPTIONS] <ROOT>
+gitserver [OPTIONS] <ROOT>
 ```
 
 `<ROOT>` 是包含裸 Git 仓库的根目录。
@@ -38,32 +38,32 @@ git-server [OPTIONS] <ROOT>
 
 ```sh
 # 使用默认设置
-git-server ./repos
+gitserver ./repos
 
 # 指定地址和端口
-git-server -b 0.0.0.0 -p 8080 ./repos
+gitserver -b 0.0.0.0 -p 8080 ./repos
 
 # JSON 格式日志
-git-server --log-format json ./repos
+gitserver --log-format json ./repos
 
 # 限制扫描深度为 1
-git-server --max-depth 1 ./repos
+gitserver --max-depth 1 ./repos
 ```
 
 ### 启用认证
 
 ```sh
 # Basic 认证
-git-server --auth-basic-username admin --auth-basic-password secret ./repos
+gitserver --auth-basic-username admin --auth-basic-password secret ./repos
 
 # Bearer 令牌认证
-git-server --auth-bearer-token my-secret-token ./repos
+gitserver --auth-bearer-token my-secret-token ./repos
 ```
 
 ### 启用 Push 支持
 
 ```sh
-git-server --enable-receive-pack ./repos
+gitserver --enable-receive-pack ./repos
 ```
 
 > 注意：push 操作默认禁用。启用后，服务器仅接受 fast-forward 更新，不允许删除引用或覆盖已有标签。
@@ -113,11 +113,11 @@ git clone http://admin:secret@127.0.0.1:3000/my-project.git
 
 ## 作为库嵌入
 
-`git-server-http` crate 提供了 `SharedState` 和 `router` 函数，可以将服务器嵌入到更大的 Axum 应用中：
+`gitserver-http` crate 提供了 `SharedState` 和 `router` 函数，可以将服务器嵌入到更大的 Axum 应用中：
 
 ```rust
-use git_server_core::discovery::RepoStore;
-use git_server_http::{SharedState, router};
+use gitserver_core::discovery::RepoStore;
+use gitserver_http::{SharedState, router};
 
 let store = RepoStore::discover("./repos".into(), 3)?;
 let state = SharedState::new(store);

@@ -3,7 +3,7 @@
 ## Basic Usage
 
 ```sh
-git-server [OPTIONS] <ROOT>
+gitserver [OPTIONS] <ROOT>
 ```
 
 `<ROOT>` is the root directory containing bare Git repositories.
@@ -38,32 +38,32 @@ git-server [OPTIONS] <ROOT>
 
 ```sh
 # With default settings
-git-server ./repos
+gitserver ./repos
 
 # Custom address and port
-git-server -b 0.0.0.0 -p 8080 ./repos
+gitserver -b 0.0.0.0 -p 8080 ./repos
 
 # JSON log format
-git-server --log-format json ./repos
+gitserver --log-format json ./repos
 
 # Limit scan depth to 1
-git-server --max-depth 1 ./repos
+gitserver --max-depth 1 ./repos
 ```
 
 ### Enable Authentication
 
 ```sh
 # Basic auth
-git-server --auth-basic-username admin --auth-basic-password secret ./repos
+gitserver --auth-basic-username admin --auth-basic-password secret ./repos
 
 # Bearer token auth
-git-server --auth-bearer-token my-secret-token ./repos
+gitserver --auth-bearer-token my-secret-token ./repos
 ```
 
 ### Enable Push Support
 
 ```sh
-git-server --enable-receive-pack ./repos
+gitserver --enable-receive-pack ./repos
 ```
 
 > Note: push operations are disabled by default. When enabled, the server only accepts fast-forward updates and does not allow ref deletion or overwriting existing tags.
@@ -113,11 +113,11 @@ Automatically used when the client sets `git-protocol: version=2` in the request
 
 ## Embed as a Library
 
-The `git-server-http` crate provides `SharedState` and `router` functions for embedding the server into a larger Axum application:
+The `gitserver-http` crate provides `SharedState` and `router` functions for embedding the server into a larger Axum application:
 
 ```rust
-use git_server_core::discovery::RepoStore;
-use git_server_http::{SharedState, router};
+use gitserver_core::discovery::RepoStore;
+use gitserver_http::{SharedState, router};
 
 let store = RepoStore::discover("./repos".into(), 3)?;
 let state = SharedState::new(store);

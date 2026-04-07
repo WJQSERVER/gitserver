@@ -1,0 +1,39 @@
+[package]
+name = "gitserver-bench"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+bench = false
+
+[dependencies]
+gitserver-core = { workspace = true }
+gitserver-http = { workspace = true }
+gix = { workspace = true }
+axum = { workspace = true }
+tokio = { workspace = true }
+reqwest = { version = "0.12", features = ["json"] }
+tempfile = "3"
+criterion = { version = "0.8", features = ["html_reports"] }
+
+[[bench]]
+name = "pack"
+harness = false
+
+[[bench]]
+name = "refs"
+harness = false
+
+[[bench]]
+name = "http_clone"
+harness = false
+
+[[bench]]
+name = "git_clone"
+harness = false
+
+[[bench]]
+name = "concurrent"
+harness = false

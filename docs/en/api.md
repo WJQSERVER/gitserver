@@ -167,7 +167,7 @@ Failed authentication returns a 401 status with a `WWW-Authenticate` header.
 
 ## Error Responses
 
-Application-level errors produced by `git-server-http` are returned in JSON format:
+Application-level errors produced by `gitserver-http` are returned in JSON format:
 
 ```json
 {

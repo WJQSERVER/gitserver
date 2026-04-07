@@ -10,10 +10,10 @@
 ```sh
 git clone https://github.com/WJQSERVER/git-server.git
 cd git-server
-cargo install --path crates/git-server
+cargo install --path crates/gitserver
 ```
 
-安装完成后，`git-server` 二进制文件会出现在 Cargo 的 bin 目录中（通常是 `~/.cargo/bin/git-server`）。
+安装完成后，`gitserver` 二进制文件会出现在 Cargo 的 bin 目录中（通常是 `~/.cargo/bin/gitserver`）。
 
 ## 构建发布版本
 
@@ -21,7 +21,7 @@ cargo install --path crates/git-server
 cargo build --release
 ```
 
-编译后的二进制文件位于 `target/release/git-server`。
+编译后的二进制文件位于 `target/release/gitserver`。
 
 ## 作为库使用
 
@@ -29,17 +29,17 @@ cargo build --release
 
 | Crate | 说明 |
 |-------|------|
-| `git-server` | CLI 二进制入口 |
-| `git-server-core` | Git 协议操作、仓库发现、路径安全 |
-| `git-server-http` | Axum HTTP 路由与处理器 |
-| `git-server-bench` | 性能基准测试（不发布） |
+| `gitserver` | CLI 二进制入口 |
+| `gitserver-core` | Git 协议操作、仓库发现、路径安全 |
+| `gitserver-http` | Axum HTTP 路由与处理器 |
+| `gitserver-bench` | 性能基准测试（不发布） |
 
 在 `Cargo.toml` 中添加依赖：
 
 ```toml
 [dependencies]
-git-server-core = { git = "https://github.com/WJQSERVER/git-server" }
-git-server-http = { git = "https://github.com/WJQSERVER/git-server" }
+gitserver-core = { git = "https://github.com/WJQSERVER/git-server" }
+gitserver-http = { git = "https://github.com/WJQSERVER/git-server" }
 ```
 
 ## 运行测试
@@ -53,7 +53,7 @@ cargo test --all-features
 ## 运行基准测试
 
 ```sh
-cargo bench -p git-server-bench
+cargo bench -p gitserver-bench
 ```
 
 基准测试包括 pack 生成、引用通告、HTTP 克隆、git clone 和并发场景。

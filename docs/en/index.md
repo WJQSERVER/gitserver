@@ -1,4 +1,4 @@
-# git-server Documentation
+# gitserver Documentation
 
 ## Getting Started
 

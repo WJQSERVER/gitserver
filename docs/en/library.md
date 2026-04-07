@@ -1,13 +1,13 @@
 # Library Usage Guide
 
-`git-server-core` and `git-server-http` can be embedded as libraries in larger Rust applications, integrating Git Smart HTTP serving into existing systems.
+`gitserver-core` and `gitserver-http` can be embedded as libraries in larger Rust applications, integrating Git Smart HTTP serving into existing systems.
 
 ## Add Dependencies
 
 ```toml
 [dependencies]
-git-server-core = { git = "https://github.com/WJQSERVER/git-server" }
-git-server-http = { git = "https://github.com/WJQSERVER/git-server" }
+gitserver-core = { git = "https://github.com/WJQSERVER/git-server" }
+gitserver-http = { git = "https://github.com/WJQSERVER/git-server" }
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
 anyhow = "1"
@@ -18,8 +18,8 @@ anyhow = "1"
 The simplest usage scans a directory and auto-discovers bare repositories:
 
 ```rust
-use git_server_core::discovery::RepoStore;
-use git_server_http::{SharedState, router};
+use gitserver_core::discovery::RepoStore;
+use gitserver_http::{SharedState, router};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -41,8 +41,8 @@ async fn main() -> anyhow::Result<()> {
 ## Configure Authentication
 
 ```rust
-use git_server_core::discovery::RepoStore;
-use git_server_http::{SharedState, router, AuthConfig, BasicAuthConfig};
+use gitserver_core::discovery::RepoStore;
+use gitserver_http::{SharedState, router, AuthConfig, BasicAuthConfig};
 
 let store = RepoStore::discover("./repos".into(), 3)?;
 
@@ -62,7 +62,7 @@ Basic and Bearer authentication can be configured simultaneously -- either one p
 ## Configure Service Policy
 
 ```rust
-use git_server_http::{SharedState, ServicePolicy, AuthConfig};
+use gitserver_http::{SharedState, ServicePolicy, AuthConfig};
 
 let state = SharedState::with_store_and_auth_policy(
     store,
@@ -81,8 +81,8 @@ Suited for multi-tenant scenarios where filesystem scanning is not desired:
 
 ```rust
 use std::sync::Arc;
-use git_server_core::discovery::{DynamicRepoRegistry, MutableRepoRegistry, RepoInfo};
-use git_server_http::{SharedState, router, ServicePolicy, AuthConfig};
+use gitserver_core::discovery::{DynamicRepoRegistry, MutableRepoRegistry, RepoInfo};
+use gitserver_http::{SharedState, router, ServicePolicy, AuthConfig};
 
 // Create empty registry
 let registry = Arc::new(DynamicRepoRegistry::new());
@@ -130,8 +130,8 @@ The `router()` function returns a standard Axum `Router` that can be nested into
 
 ```rust
 use axum::Router;
-use git_server_core::discovery::RepoStore;
-use git_server_http::{SharedState, router};
+use gitserver_core::discovery::RepoStore;
+use gitserver_http::{SharedState, router};
 
 let store = RepoStore::discover("./repos".into(), 3)?;
 let git_state = SharedState::new(store);
@@ -150,8 +150,8 @@ For finer control over request handling, call functions from the `handlers` modu
 
 ```rust
 use axum::http::{HeaderMap, StatusCode};
-use git_server_core::discovery::RepoStore;
-use git_server_http::{
+use gitserver_core::discovery::RepoStore;
+use gitserver_http::{
     SharedState, ServicePolicy, AuthConfig,
     handlers::{info_refs_endpoint, ServiceKind},
 };
@@ -194,12 +194,12 @@ tokio::spawn(async move {
 });
 ```
 
-## Using git-server-core Directly
+## Using gitserver-core Directly
 
-If you only need Git protocol operations without the HTTP layer, use `git-server-core` directly:
+If you only need Git protocol operations without the HTTP layer, use `gitserver-core` directly:
 
 ```rust
-use git_server_core::{
+use gitserver_core::{
     discovery::RepoStore,
     backend::GitBackend,
     pack::{UploadPackRequest, UploadPackCapabilities, ShallowRequest},

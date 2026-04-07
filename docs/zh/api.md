@@ -167,7 +167,7 @@ object-format=sha1
 
 ## 错误响应
 
-由 `git-server-http` 产生的应用层错误会以 JSON 格式返回：
+由 `gitserver-http` 产生的应用层错误会以 JSON 格式返回：
 
 ```json
 {

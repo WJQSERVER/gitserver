@@ -10,10 +10,10 @@
 ```sh
 git clone https://github.com/WJQSERVER/git-server.git
 cd git-server
-cargo install --path crates/git-server
+cargo install --path crates/gitserver
 ```
 
-After installation, the `git-server` binary will be in Cargo's bin directory (typically `~/.cargo/bin/git-server`).
+After installation, the `gitserver` binary will be in Cargo's bin directory (typically `~/.cargo/bin/gitserver`).
 
 ## Build a Release Binary
 
@@ -21,7 +21,7 @@ After installation, the `git-server` binary will be in Cargo's bin directory (ty
 cargo build --release
 ```
 
-The compiled binary is at `target/release/git-server`.
+The compiled binary is at `target/release/gitserver`.
 
 ## Use as a Library
 
@@ -29,17 +29,17 @@ The project is organized as a Cargo workspace with four crates:
 
 | Crate | Description |
 |-------|-------------|
-| `git-server` | CLI binary entry point |
-| `git-server-core` | Git protocol operations, repo discovery, path security |
-| `git-server-http` | Axum HTTP routing and handlers |
-| `git-server-bench` | Performance benchmarks (not published) |
+| `gitserver` | CLI binary entry point |
+| `gitserver-core` | Git protocol operations, repo discovery, path security |
+| `gitserver-http` | Axum HTTP routing and handlers |
+| `gitserver-bench` | Performance benchmarks (not published) |
 
 Add dependencies in your `Cargo.toml`:
 
 ```toml
 [dependencies]
-git-server-core = { git = "https://github.com/WJQSERVER/git-server" }
-git-server-http = { git = "https://github.com/WJQSERVER/git-server" }
+gitserver-core = { git = "https://github.com/WJQSERVER/git-server" }
+gitserver-http = { git = "https://github.com/WJQSERVER/git-server" }
 ```
 
 ## Running Tests
@@ -53,7 +53,7 @@ The test suite covers unit tests, integration tests (`git clone`/`git fetch`), a
 ## Running Benchmarks
 
 ```sh
-cargo bench -p git-server-bench
+cargo bench -p gitserver-bench
 ```
 
 Benchmarks cover pack generation, ref advertisement, HTTP clone, git clone, and concurrent scenarios.

@@ -3,12 +3,12 @@
 ## 项目结构
 
 ```
-git-server/
+gitserver/
 ├── crates/
-│   ├── git-server/          # CLI 二进制入口
-│   ├── git-server-core/     # Git 协议操作核心
-│   ├── git-server-http/     # HTTP 层（Axum）
-│   └── git-server-bench/    # 性能基准测试
+│   ├── gitserver/          # CLI 二进制入口
+│   ├── gitserver-core/     # Git 协议操作核心
+│   ├── gitserver-http/     # HTTP 层（Axum）
+│   └── gitserver-bench/    # 性能基准测试
 ├── docs/
 │   ├── zh/                  # 中文文档
 │   └── en/                  # 英文文档
@@ -18,7 +18,7 @@ git-server/
 
 ## Crate 职责
 
-### git-server-core
+### gitserver-core
 
 核心 Git 协议操作库，不依赖任何 HTTP 框架。
 
@@ -34,7 +34,7 @@ git-server/
 | `path` | 路径安全验证，防止目录遍历 |
 | `error` | 统一错误类型 |
 
-### git-server-http
+### gitserver-http
 
 基于 Axum 的 HTTP 层，将核心操作暴露为 HTTP 端点。
 
@@ -44,7 +44,7 @@ git-server/
 | `error` | `AppError` 枚举，将核心错误映射为 HTTP 状态码 |
 | `lib` | `SharedState`、`router` 函数、认证配置、服务策略 |
 
-### git-server
+### gitserver
 
 CLI 二进制入口，负责：
 
@@ -55,7 +55,7 @@ CLI 二进制入口，负责：
 - 启动后台定期重新扫描任务
 - 绑定 TCP 监听器并服务
 
-### git-server-bench
+### gitserver-bench
 
 性能基准测试，不发布。包含：
 

@@ -1,0 +1,13 @@
+This Source Code Form is subject to the terms of the Mozilla Public
+License, v. 2.0. If a copy of the MPL was not distributed with this
+file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+Copyright (c) 2026 WJQSERVER
+
+This crate is part of `gitserver`.
+
+Licensing:
+- Primary repository license: MPL-2.0 (see root `LICENSE`)
+- Upstream project: https://github.com/ggueret/git-server
+- Upstream MIT license text is preserved in `UPSTREAM-LICENSE` and root `LICENSE-UPSTREAM-MIT`
+- File-level notices and preserved upstream license files govern specific files where applicable
