@@ -1,5 +1,6 @@
 pub mod backend;
 pub mod discovery;
+pub mod dynamic_registry;
 pub mod error;
 pub mod pack;
 pub mod path;
