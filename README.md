@@ -37,16 +37,24 @@ Options:
   -l, --log-level <LEVEL>        Log level [default: info]
       --log-format <FORMAT>      Log format: text or json [default: text]
   -w, --workers <N>              Number of Tokio worker threads
-      --max-depth <N>            Max directory depth for repo discovery [default: 3]
+  --max-depth <N>            Max directory depth for repo discovery [default: 3]
+      --rescan-interval-secs <N> Periodic rescan interval in seconds [default: 30]
+      --auth-basic-username <USER> Require HTTP Basic auth username
+      --auth-basic-password <PASS> Require HTTP Basic auth password
+      --auth-bearer-token <TOKEN>  Require Bearer auth token
+      --enable-receive-pack        Enable push support over git-receive-pack
 ```
 
 ## API
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
+| GET | `/healthz` | Health check endpoint |
 | GET | `/` | JSON array of discovered repositories |
 | GET | `/{repo}/info/refs?service=git-upload-pack` | Git ref advertisement |
+| GET | `/{repo}/info/refs?service=git-receive-pack` | Git receive-pack advertisement |
 | POST | `/{repo}/git-upload-pack` | Git pack negotiation |
+| POST | `/{repo}/git-receive-pack` | Git push handling |
 
 Repository listing response:
 
@@ -55,7 +63,6 @@ Repository listing response:
   {
     "name": "my-project.git",
     "relative_path": "my-project.git",
-    "absolute_path": "/srv/repos/my-project.git",
     "description": "My project"
   }
 ]
@@ -63,16 +70,27 @@ Repository listing response:
 
 ## Architecture
 
-The project is organized as a Cargo workspace with three crates:
+The project is organized as a Cargo workspace with four crates:
 
 - **git-server-core** -- Git protocol operations (ref advertisement, pack generation), repository discovery, path security
 - **git-server-http** -- Axum HTTP routing, handlers, error responses
 - **git-server** -- CLI binary, tracing setup, server assembly
+- **git-server-bench** -- Performance benchmarks
+
+## Documentation
+
+Full documentation is available in [English](docs/en/index.md) and [Chinese](docs/zh/index.md):
+
+- [Installation Guide](docs/en/installation.md)
+- [Usage Guide](docs/en/usage.md)
+- [API Reference](docs/en/api.md)
+- [Architecture](docs/en/architecture.md)
+- [Library Usage](docs/en/library.md)
 
 ## Building from source
 
 ```sh
-git clone https://github.com/ggueret/git-server.git
+git clone https://github.com/WJQSERVER/git-server.git
 cd git-server
 cargo build --release
 ```
