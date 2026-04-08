@@ -3,5 +3,5 @@ Copyright (c) 2026 WJQSERVER
 Repository licensing summary:
 - Primary repository license: MPL-2.0 (see `LICENSE`)
 - Upstream project: https://github.com/ggueret/git-server
-- Upstream MIT license text is preserved in `LICENSE-UPSTREAM-MIT` and in each crate's `license/UPSTREAM-LICENSE`
+- Upstream MIT license text is preserved in `UPSTREAM-LICENSE` and in each crate's `license/UPSTREAM-LICENSE`
 - File-level notices and preserved upstream license files govern specific files where applicable
