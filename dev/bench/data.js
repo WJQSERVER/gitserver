@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1775680974527,
+  "lastUpdate": 1775681096532,
   "repoUrl": "https://github.com/WJQSERVER/gitserver",
   "entries": {
     "git-server Benchmarks": [
@@ -661,6 +661,138 @@ window.BENCHMARK_DATA = {
             "name": "ref_advertisement/advertise/large",
             "value": 357662,
             "range": "± 27223",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "114663932+WJQSERVER@users.noreply.github.com",
+            "name": "wjqserver",
+            "username": "WJQSERVER"
+          },
+          "committer": {
+            "email": "114663932+WJQSERVER@users.noreply.github.com",
+            "name": "wjqserver",
+            "username": "WJQSERVER"
+          },
+          "distinct": true,
+          "id": "601132e4bfce33c8431ae09db8b533a703c0e9ba",
+          "message": "rename: LICENSE-UPSTREAM-MIT to UPSTREAM-LICENSE",
+          "timestamp": "2026-04-09T04:23:53+08:00",
+          "tree_id": "06ec8d52dd61e0d5c2ea03065a976e3cc5c364d1",
+          "url": "https://github.com/WJQSERVER/gitserver/commit/601132e4bfce33c8431ae09db8b533a703c0e9ba"
+        },
+        "date": 1775681095972,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "concurrent_clones/clones/1",
+            "value": 115881757,
+            "range": "± 5056791",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "concurrent_clones/clones/2",
+            "value": 157441535,
+            "range": "± 31278130",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "concurrent_clones/clones/4",
+            "value": 255525890,
+            "range": "± 7284559",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "concurrent_clones/clones/8",
+            "value": 466648218,
+            "range": "± 10745072",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "concurrent_clones/clones/16",
+            "value": 919352097,
+            "range": "± 14061871",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "concurrent_clones/clones/32",
+            "value": 1843995647,
+            "range": "± 22447905",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "git_clone/clone/small",
+            "value": 60257208,
+            "range": "± 2825756",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "git_clone/clone/medium",
+            "value": 113619389,
+            "range": "± 11369593",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "git_clone/clone/large",
+            "value": 1879025035,
+            "range": "± 19859813",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "http_clone/clone/small",
+            "value": 82977022,
+            "range": "± 14556011",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "http_clone/clone/medium",
+            "value": 124846626,
+            "range": "± 12506515",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "http_clone/clone/large",
+            "value": 1571225990,
+            "range": "± 9535575",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pack_generation/clone/small",
+            "value": 1140348,
+            "range": "± 32064",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pack_generation/clone/medium",
+            "value": 38602596,
+            "range": "± 1955506",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pack_generation/clone/large",
+            "value": 1446144108,
+            "range": "± 6956345",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ref_advertisement/advertise/small",
+            "value": 213406,
+            "range": "± 2428",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ref_advertisement/advertise/medium",
+            "value": 275104,
+            "range": "± 4611",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ref_advertisement/advertise/large",
+            "value": 369452,
+            "range": "± 18198",
             "unit": "ns/iter"
           }
         ]
