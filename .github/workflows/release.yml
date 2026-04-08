@@ -53,22 +53,22 @@ jobs:
       - name: Build
         run: |
           if [ "${{ matrix.cross }}" = "true" ]; then
-            cross build --release --target ${{ matrix.target }} -p git-server
+            cross build --release --target ${{ matrix.target }} -p gitserver
           else
-            cargo build --release --target ${{ matrix.target }} -p git-server
+            cargo build --release --target ${{ matrix.target }} -p gitserver
           fi
 
       - name: Package
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           cd target/${{ matrix.target }}/release
-          tar czf "../../../git-server-${VERSION}-${{ matrix.target }}.tar.gz" git-server
+          tar czf "../../../gitserver-${VERSION}-${{ matrix.target }}.tar.gz" gitserver
           cd ../../..
 
       - uses: actions/upload-artifact@v4
         with:
-          name: git-server-${{ matrix.target }}
-          path: git-server-*.tar.gz
+          name: gitserver-${{ matrix.target }}
+          path: gitserver-*.tar.gz
 
   publish:
     name: Publish to crates.io
@@ -77,19 +77,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo publish -p git-server-core || true
+      - run: cargo publish -p gitserver-core
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-      - run: sleep 30 && cargo publish -p git-server-http || true
+      - run: sleep 30 && cargo publish -p gitserver-http
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-      - run: sleep 30 && cargo publish -p git-server || true
+      - run: sleep 30 && cargo publish -p gitserver
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
   release:
     name: Release
-    needs: build
+    needs: [build, publish]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

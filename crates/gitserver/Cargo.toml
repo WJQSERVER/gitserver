@@ -1,0 +1,17 @@
+[package]
+name = "gitserver"
+description = "Independent smart HTTP Git server derived from the upstream git-server project"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+gitserver-core = { workspace = true }
+gitserver-http = { workspace = true }
+axum = { workspace = true }
+tokio = { workspace = true }
+clap = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = "1"

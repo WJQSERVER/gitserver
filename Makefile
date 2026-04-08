@@ -9,13 +9,13 @@ lint:
 test:
 	cargo test --all-features
 
-check: fmt
+check:
 	cargo fmt --check
 	cargo clippy --all-targets --all-features -- -D warnings
 	cargo test --all-features
 
 bench:
-	cargo bench -p git-server-bench
+	cargo bench -p gitserver-bench
 
 build:
 	cargo build --release

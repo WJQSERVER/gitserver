@@ -738,27 +738,27 @@ dependencies = [
 ]
 
 [[package]]
-name = "git-server"
+name = "gitserver"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
  "clap",
- "git-server-core",
- "git-server-http",
+ "gitserver-core",
+ "gitserver-http",
  "tokio",
  "tracing",
  "tracing-subscriber",
 ]
 
 [[package]]
-name = "git-server-bench"
+name = "gitserver-bench"
 version = "0.1.0"
 dependencies = [
  "axum",
  "criterion",
- "git-server-core",
- "git-server-http",
+ "gitserver-core",
+ "gitserver-http",
  "gix",
  "reqwest",
  "tempfile",
@@ -766,7 +766,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "git-server-core"
+name = "gitserver-core"
 version = "0.1.0"
 dependencies = [
  "bytes",
@@ -784,13 +784,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "git-server-http"
+name = "gitserver-http"
 version = "0.1.0"
 dependencies = [
  "axum",
  "base64",
  "flate2",
- "git-server-core",
+ "gitserver-core",
  "gix",
  "gix-pack",
  "http-body-util",
