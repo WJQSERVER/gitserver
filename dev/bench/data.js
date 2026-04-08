@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1775598866483,
+  "lastUpdate": 1775677269332,
   "repoUrl": "https://github.com/WJQSERVER/gitserver",
   "entries": {
     "git-server Benchmarks": [
@@ -395,6 +395,140 @@ window.BENCHMARK_DATA = {
             "name": "ref_advertisement/advertise/large",
             "value": 355868,
             "range": "± 3640",
+            "unit": "ns/iter"
+          }
+        ]
+      }
+    ],
+    "gitserver Benchmarks": [
+      {
+        "commit": {
+          "author": {
+            "email": "114663932+WJQSERVER@users.noreply.github.com",
+            "name": "WJQSERVER",
+            "username": "WJQSERVER"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "fb05600cef4201e799e833465c7403f1ed4d4830",
+          "message": "Merge pull request #9 from WJQSERVER/docs\n\nDocs",
+          "timestamp": "2026-04-09T03:19:07+08:00",
+          "tree_id": "08eb7af359ffc4f8f2908b69d2deb8a803d82c83",
+          "url": "https://github.com/WJQSERVER/gitserver/commit/fb05600cef4201e799e833465c7403f1ed4d4830"
+        },
+        "date": 1775677268310,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "concurrent_clones/clones/1",
+            "value": 98954022,
+            "range": "± 2027564",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "concurrent_clones/clones/2",
+            "value": 135090705,
+            "range": "± 53864942",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "concurrent_clones/clones/4",
+            "value": 221335545,
+            "range": "± 6651404",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "concurrent_clones/clones/8",
+            "value": 387901692,
+            "range": "± 6307459",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "concurrent_clones/clones/16",
+            "value": 772316297,
+            "range": "± 7041288",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "concurrent_clones/clones/32",
+            "value": 1546975452,
+            "range": "± 10900336",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "git_clone/clone/small",
+            "value": 54857911,
+            "range": "± 441041",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "git_clone/clone/medium",
+            "value": 98305982,
+            "range": "± 4082734",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "git_clone/clone/large",
+            "value": 1639947815,
+            "range": "± 29989835",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "http_clone/clone/small",
+            "value": 84292180,
+            "range": "± 20146238",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "http_clone/clone/medium",
+            "value": 116182858,
+            "range": "± 10739969",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "http_clone/clone/large",
+            "value": 1275785126,
+            "range": "± 16119505",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pack_generation/clone/small",
+            "value": 753643,
+            "range": "± 15344",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pack_generation/clone/medium",
+            "value": 28866000,
+            "range": "± 2456261",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pack_generation/clone/large",
+            "value": 1152486373,
+            "range": "± 12441165",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ref_advertisement/advertise/small",
+            "value": 118617,
+            "range": "± 1298",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ref_advertisement/advertise/medium",
+            "value": 159954,
+            "range": "± 12521",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ref_advertisement/advertise/large",
+            "value": 207516,
+            "range": "± 3548",
             "unit": "ns/iter"
           }
         ]
