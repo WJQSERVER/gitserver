@@ -739,7 +739,7 @@ dependencies = [
 
 [[package]]
 name = "gitserver"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -753,7 +753,7 @@ dependencies = [
 
 [[package]]
 name = "gitserver-bench"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "axum",
  "criterion",
@@ -767,7 +767,7 @@ dependencies = [
 
 [[package]]
 name = "gitserver-core"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "bytes",
  "gix",
@@ -785,7 +785,7 @@ dependencies = [
 
 [[package]]
 name = "gitserver-http"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "axum",
  "base64",
