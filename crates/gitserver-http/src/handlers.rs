@@ -41,6 +41,7 @@ pub async fn list_repos(
     State(store): State<SharedState>,
     headers: HeaderMap,
 ) -> Result<Json<Vec<RepoInfo>>, AppError> {
+    reject_if_draining(&store)?;
     require_auth(&store, &headers)?;
     Ok(Json(store.list().await?))
 }
@@ -159,6 +160,16 @@ fn require_auth(store: &SharedState, headers: &HeaderMap) -> Result<(), AppError
     Err(AppError::Unauthorized)
 }
 
+fn reject_if_draining(store: &SharedState) -> Result<(), AppError> {
+    if store.is_draining() {
+        Err(AppError::ServiceUnavailable(
+            "server is shutting down".into(),
+        ))
+    } else {
+        Ok(())
+    }
+}
+
 /// GET /{*path} -- dispatches to info_refs when path ends with /info/refs
 pub async fn info_refs_dispatch(
     State(store): State<SharedState>,
@@ -196,6 +207,7 @@ pub async fn info_refs_endpoint(
     service: ServiceKind,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
+    reject_if_draining(store)?;
     let protocol_v2 = service == ServiceKind::UploadPack && is_protocol_v2(&headers);
 
     match service {
@@ -266,6 +278,8 @@ pub async fn rpc_dispatch(
     let headers = parts.headers;
 
     if let Some(repo_path) = strip_path_suffix(&path, "/git-upload-pack") {
+        reject_if_draining(&store)?;
+
         if !store.policy().upload_pack {
             return Err(AppError::NotFound(
                 "service disabled: git-upload-pack".into(),
@@ -296,6 +310,7 @@ pub async fn rpc_endpoint(
     headers: HeaderMap,
     request: Bytes,
 ) -> Result<Response, AppError> {
+    reject_if_draining(store)?;
     match service {
         ServiceKind::UploadPack if !store.policy().upload_pack => {
             return Err(AppError::NotFound(format!(
@@ -376,6 +391,8 @@ async fn receive_pack_streaming_endpoint(
     headers: HeaderMap,
     request_body: Body,
 ) -> Result<Response, AppError> {
+    reject_if_draining(store)?;
+
     let content_type = headers
         .get(header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
@@ -483,8 +500,9 @@ mod tests {
     use std::path::Path;
     use std::process::Command;
 
-    use axum::body::Body;
+    use axum::body::{Body, Bytes};
     use axum::http::{HeaderMap, Request, StatusCode, header};
+    use futures_util::stream;
     use http_body_util::BodyExt;
     use tempfile::TempDir;
     use tower::ServiceExt;
@@ -575,6 +593,51 @@ mod tests {
         let bytes = response.into_body().collect().await.unwrap().to_bytes();
         let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(json["status"], "shutting_down");
+    }
+
+    #[tokio::test]
+    async fn list_repos_returns_503_while_draining() {
+        let tmp = TempDir::new().unwrap();
+        let store = test_store(&tmp);
+        let state = crate::SharedState::new(store);
+        state.start_shutdown();
+        let app = router(state);
+
+        let response = app
+            .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["error"], "service_unavailable");
+    }
+
+    #[tokio::test]
+    async fn info_refs_returns_503_while_draining() {
+        let tmp = TempDir::new().unwrap();
+        let store = test_store(&tmp);
+        let state = crate::SharedState::new(store);
+        state.start_shutdown();
+        let app = router(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/test.git/info/refs?service=git-upload-pack")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["error"], "service_unavailable");
     }
 
     #[tokio::test]
@@ -681,6 +744,72 @@ mod tests {
         let bytes = response.into_body().collect().await.unwrap().to_bytes();
         let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(json["error"], "bad_request");
+    }
+
+    #[tokio::test]
+    async fn receive_pack_returns_503_while_draining() {
+        let tmp = TempDir::new().unwrap();
+        let store = test_store(&tmp);
+        let state = crate::SharedState::with_store_and_auth_policy(
+            store,
+            crate::AuthConfig::default(),
+            crate::ServicePolicy {
+                receive_pack: true,
+                ..Default::default()
+            },
+        );
+        state.start_shutdown();
+        let app = router(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/test.git/git-receive-pack")
+                    .header("content-type", "application/x-git-receive-pack-request")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["error"], "service_unavailable");
+    }
+
+    #[tokio::test]
+    async fn upload_pack_returns_503_while_draining_before_reading_body() {
+        let tmp = TempDir::new().unwrap();
+        let store = test_store(&tmp);
+        let state = crate::SharedState::new(store);
+        state.start_shutdown();
+        let app = router(state);
+
+        let hanging_body = Body::from_stream(stream::pending::<Result<Bytes, std::io::Error>>());
+
+        let response = tokio::time::timeout(
+            std::time::Duration::from_millis(100),
+            app.oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/test.git/git-upload-pack")
+                    .header("content-type", "application/x-git-upload-pack-request")
+                    .body(hanging_body)
+                    .unwrap(),
+            ),
+        )
+        .await
+        .expect("draining upload-pack should be rejected without reading body")
+        .unwrap();
+
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["error"], "service_unavailable");
     }
 
     #[tokio::test]

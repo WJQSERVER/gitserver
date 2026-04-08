@@ -1336,6 +1336,26 @@ async fn healthz_endpoint_returns_503_while_draining() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn list_repos_returns_503_while_draining() {
+    let root = TempDir::new().unwrap();
+    create_bare_repo_with_commits(root.path(), "alpha.git", 1);
+
+    let mut server = TestServer::start(root.path()).await;
+    server.mark_draining();
+
+    let resp = reqwest::get(format!("http://{}/", server.addr))
+        .await
+        .expect("GET / while draining");
+    assert_eq!(resp.status(), 503);
+
+    let json: serde_json::Value = resp.json().await.expect("parse draining list json");
+    assert_eq!(json["error"], "service_unavailable");
+
+    server.begin_shutdown();
+    server.wait_for_exit().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn info_refs_requires_authentication_when_configured() {
     let root = TempDir::new().unwrap();
     create_bare_repo_with_commits(root.path(), "secure.git", 1);
@@ -2053,6 +2073,79 @@ async fn git_push_is_rejected_when_receive_pack_is_disabled() {
 
     let _ = shutdown_tx.send(());
     handle.await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn git_push_is_rejected_while_draining() {
+    let root = TempDir::new().unwrap();
+    create_bare_repo_with_commits(root.path(), "draining.git", 1);
+
+    let bare_repo = root.path().join("draining.git");
+    let initial_head = repo_head_oid(&bare_repo);
+    let mut server = TestServer::start(root.path()).await;
+
+    let clone_dir = TempDir::new().unwrap();
+    let clone_path = clone_dir.path().join("draining-clone");
+    let clone = Command::new("git")
+        .args([
+            "clone",
+            &server.url("draining.git"),
+            clone_path.to_str().unwrap(),
+        ])
+        .output()
+        .expect("git clone for draining push test");
+    assert!(clone.status.success(), "git clone failed: {:?}", clone);
+
+    for (key, val) in [("user.name", "Test User"), ("user.email", "test@test.com")] {
+        let out = Command::new("git")
+            .args(["config", key, val])
+            .current_dir(&clone_path)
+            .output()
+            .expect("git config");
+        assert!(out.status.success(), "git config failed: {:?}", out);
+    }
+
+    std::fs::write(clone_path.join("draining.txt"), "draining push\n").unwrap();
+    let out = Command::new("git")
+        .args(["add", "draining.txt"])
+        .current_dir(&clone_path)
+        .output()
+        .expect("git add draining file");
+    assert!(out.status.success(), "git add failed: {:?}", out);
+
+    let out = Command::new("git")
+        .args(["commit", "-m", "draining commit"])
+        .current_dir(&clone_path)
+        .env("GIT_AUTHOR_NAME", "Test User")
+        .env("GIT_AUTHOR_EMAIL", "test@test.com")
+        .env("GIT_COMMITTER_NAME", "Test User")
+        .env("GIT_COMMITTER_EMAIL", "test@test.com")
+        .output()
+        .expect("git commit draining file");
+    assert!(out.status.success(), "git commit failed: {:?}", out);
+
+    server.mark_draining();
+
+    let push = Command::new("git")
+        .args(["push", "origin", "main"])
+        .current_dir(&clone_path)
+        .output()
+        .expect("git push while draining");
+    assert!(
+        !push.status.success(),
+        "push should be rejected while draining: stdout={}, stderr={}",
+        String::from_utf8_lossy(&push.stdout),
+        String::from_utf8_lossy(&push.stderr),
+    );
+
+    let head_after = repo_head_oid(&bare_repo);
+    assert_eq!(
+        head_after, initial_head,
+        "draining push must not update refs"
+    );
+
+    server.begin_shutdown();
+    server.wait_for_exit().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
