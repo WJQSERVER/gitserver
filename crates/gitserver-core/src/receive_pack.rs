@@ -11,14 +11,17 @@ use std::sync::atomic::AtomicBool;
 use gix::objs::bstr::BString;
 use gix::prelude::ObjectIdExt;
 use gix::progress::Discard;
-use gix::refs::Target;
 use gix::refs::transaction::{Change, LogChange, PreviousValue, RefEdit, RefLog};
+use gix::refs::Target;
 
 use crate::error::{Error, Result};
 use crate::pktline;
 
 const ZERO_ID: &str = "0000000000000000000000000000000000000000";
-const CAPABILITIES: &str = "report-status report-status-v2 side-band-64k quiet ofs-delta object-format=sha1 agent=gitserver/0.1";
+const CAPABILITIES: &str = concat!(
+    "report-status report-status-v2 side-band-64k quiet ofs-delta object-format=sha1 agent=gitserver/",
+    env!("CARGO_PKG_VERSION")
+);
 
 pub fn advertise_receive_refs(repo_path: &Path) -> Result<Vec<u8>> {
     let repo = gix::open(repo_path)?;
