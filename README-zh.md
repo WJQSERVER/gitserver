@@ -49,7 +49,11 @@ async fn main() -> anyhow::Result<()> {
     let app = router(state);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await?;
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(async {
+            tokio::signal::ctrl_c().await.expect("install Ctrl+C handler");
+        })
+        .await?;
     Ok(())
 }
 ```
@@ -102,11 +106,13 @@ gitserver [OPTIONS] <ROOT>
   --enable-receive-pack         启用 git-receive-pack, 允许 push
 ```
 
+独立 CLI 在收到 `SIGINT`/`SIGTERM` 后会执行优雅关闭: `/healthz` 会切换为 `503`, listener 停止接受新连接, 已在进行中的 Git 请求会继续排空完成.
+
 ## API
 
 | 方法 | 端点 | 描述 |
 |------|------|------|
-| GET | `/healthz` | 健康检查端点 |
+| GET | `/healthz` | 健康检查端点; 优雅关闭排空期间返回 `503` |
 | GET | `/` | 返回当前暴露的仓库列表(来自扫描或动态注册) |
 | GET | `/{repo}/info/refs?service=git-upload-pack` | Git 引用通告 |
 | GET | `/{repo}/info/refs?service=git-receive-pack` | Git receive-pack 通告, 默认关闭 |

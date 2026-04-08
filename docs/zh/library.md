@@ -32,11 +32,17 @@ async fn main() -> anyhow::Result<()> {
 
     // 启动服务
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await?;
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(async {
+            tokio::signal::ctrl_c().await.expect("install Ctrl+C handler");
+        })
+        .await?;
 
     Ok(())
 }
 ```
+
+如果你暴露了 `GET /healthz`, 它在正常运行时返回 `200`, 在通过 `SharedState::start_shutdown()` 标记为排空后返回 `503`. 这样宿主应用可以先切换 readiness, 再等待已在进行中的请求完成.
 
 ## 配置认证
 

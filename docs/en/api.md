@@ -10,6 +10,8 @@ GET /healthz
 
 Lightweight readiness/liveness probe. No authentication required.
 
+Returns `200 OK` with `{"status":"ok"}` during normal operation. Once graceful shutdown begins, it returns `503 Service Unavailable` with `{"status":"shutting_down"}` so external load balancers can stop sending new traffic while in-flight Git requests finish draining.
+
 **Response:**
 
 ```json

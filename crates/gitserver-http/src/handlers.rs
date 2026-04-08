@@ -3,7 +3,7 @@ use axum::{
     body::{Body, Bytes},
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode, header},
-    response::Response,
+    response::{IntoResponse, Response},
 };
 use http_body_util::BodyExt;
 use serde::Deserialize;
@@ -46,8 +46,19 @@ pub async fn list_repos(
 }
 
 /// GET /healthz -- lightweight readiness/liveness probe.
-pub async fn healthz() -> Json<HealthzResponse> {
-    Json(HealthzResponse { status: "ok" })
+pub async fn healthz(State(store): State<SharedState>) -> Response {
+    let (status, body) = if store.is_draining() {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            HealthzResponse {
+                status: "shutting_down",
+            },
+        )
+    } else {
+        (StatusCode::OK, HealthzResponse { status: "ok" })
+    };
+
+    (status, Json(body)).into_response()
 }
 
 #[derive(Deserialize)]
@@ -539,6 +550,31 @@ mod tests {
         let bytes = response.into_body().collect().await.unwrap().to_bytes();
         let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(json["status"], "ok");
+    }
+
+    #[tokio::test]
+    async fn healthz_returns_503_while_draining() {
+        let tmp = TempDir::new().unwrap();
+        let store = test_store(&tmp);
+        let state = crate::SharedState::new(store);
+        state.start_shutdown();
+        let app = router(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/healthz")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["status"], "shutting_down");
     }
 
     #[tokio::test]

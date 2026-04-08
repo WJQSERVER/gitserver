@@ -518,6 +518,59 @@ async fn upload_pack_streams_large_responses() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn graceful_shutdown_drains_in_flight_upload_pack_response() {
+    let root = TempDir::new().unwrap();
+    let bare_path = create_bare_repo_with_commits(root.path(), "drain.git", 1);
+    add_large_commit(&bare_path);
+    let head_oid = repo_head_oid(&bare_path);
+
+    let mut server = TestServer::start(root.path()).await;
+
+    let mut request_body = make_pktline(&format!("want {head_oid}\n"));
+    request_body.extend_from_slice(b"0000");
+    request_body.extend_from_slice(b"0009done\n");
+
+    let client = reqwest::Client::new();
+    let mut response = client
+        .post(server.url("drain.git/git-upload-pack"))
+        .header("content-type", "application/x-git-upload-pack-request")
+        .body(request_body)
+        .send()
+        .await
+        .expect("POST git-upload-pack before shutdown");
+
+    assert_eq!(response.status(), 200);
+
+    let mut body = Vec::new();
+    while body.len() < 8 {
+        let chunk = response
+            .chunk()
+            .await
+            .expect("read response chunk before shutdown")
+            .expect("expected upload-pack response chunk before shutdown");
+        body.extend_from_slice(&chunk);
+    }
+    assert!(body.starts_with(b"0008NAK\n"));
+
+    server.begin_shutdown();
+
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .expect("read drained upload-pack response chunk")
+    {
+        body.extend_from_slice(&chunk);
+    }
+
+    assert!(
+        body.windows(4).any(|window| window == b"PACK"),
+        "drained response should contain pack data"
+    );
+
+    server.wait_for_exit().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn upload_pack_uses_ofs_delta_when_requested() {
     let root = TempDir::new().unwrap();
     let bare_path = create_bare_repo_with_commits(root.path(), "delta.git", 1);
@@ -1260,6 +1313,26 @@ async fn healthz_endpoint_returns_ok() {
     assert_eq!(json["status"], "ok");
 
     server.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn healthz_endpoint_returns_503_while_draining() {
+    let root = TempDir::new().unwrap();
+    create_bare_repo_with_commits(root.path(), "alpha.git", 1);
+
+    let mut server = TestServer::start(root.path()).await;
+    server.mark_draining();
+
+    let resp = reqwest::get(format!("http://{}/healthz", server.addr))
+        .await
+        .expect("GET /healthz while draining");
+    assert_eq!(resp.status(), 503);
+
+    let json: serde_json::Value = resp.json().await.expect("parse draining healthz json");
+    assert_eq!(json["status"], "shutting_down");
+
+    server.begin_shutdown();
+    server.wait_for_exit().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]

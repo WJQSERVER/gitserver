@@ -4,7 +4,10 @@
 //
 // Copyright (c) 2026 WJQSERVER
 
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 use gitserver_core::discovery::{
     DynamicRepoRegistry, MutableRepoRegistry, RepoResolver, RepoStore,
@@ -28,6 +31,7 @@ pub struct SharedState {
     mode: RepoMode,
     auth: AuthConfig,
     policy: ServicePolicy,
+    draining: Arc<AtomicBool>,
 }
 
 #[derive(Clone)]
@@ -75,6 +79,7 @@ impl SharedState {
             mode: RepoMode::Discovered(store),
             auth,
             policy,
+            draining: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -90,6 +95,7 @@ impl SharedState {
             },
             auth,
             policy,
+            draining: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -168,5 +174,13 @@ impl SharedState {
 
     pub fn policy(&self) -> &ServicePolicy {
         &self.policy
+    }
+
+    pub fn start_shutdown(&self) {
+        self.draining.store(true, Ordering::Relaxed);
+    }
+
+    pub fn is_draining(&self) -> bool {
+        self.draining.load(Ordering::Relaxed)
     }
 }

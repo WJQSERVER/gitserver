@@ -54,6 +54,7 @@ CLI binary entry point, responsible for:
 - Building `SharedState` and Axum routes
 - Spawning the background periodic rescan task
 - Binding the TCP listener and serving
+- Handling `SIGINT`/`SIGTERM`, flipping readiness to draining, and waiting for in-flight requests to finish
 
 ### gitserver-bench
 
