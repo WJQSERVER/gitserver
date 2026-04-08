@@ -11,8 +11,8 @@ use std::sync::atomic::AtomicBool;
 use gix::objs::bstr::BString;
 use gix::prelude::ObjectIdExt;
 use gix::progress::Discard;
-use gix::refs::transaction::{Change, LogChange, PreviousValue, RefEdit, RefLog};
 use gix::refs::Target;
+use gix::refs::transaction::{Change, LogChange, PreviousValue, RefEdit, RefLog};
 
 use crate::error::{Error, Result};
 use crate::pktline;
