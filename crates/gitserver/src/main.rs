@@ -153,6 +153,8 @@ async fn shutdown_sequence_with_signal<F>(
     match signal.await {
         Ok(()) => {}
         Err(err) => {
+            // If signal registration fails, keep serving instead of treating setup failure
+            // as an actual shutdown request.
             tracing::error!("failed to install shutdown signal handler: {err}");
             return;
         }
@@ -168,11 +170,14 @@ async fn shutdown_sequence_with_signal<F>(
     tokio::time::sleep(PRE_STOP_DRAIN_DELAY).await;
 
     info!("pre-stop drain window elapsed, stopping listener");
+    // This is best-effort: if axum has already exited, dropping the send result is fine.
     let _ = graceful_tx.send(());
 }
 
 async fn await_graceful_shutdown(graceful_rx: oneshot::Receiver<()>) {
     if graceful_rx.await.is_err() {
+        // Keep the shutdown future pending if the sender disappears unexpectedly so the
+        // server does not stop listening without an explicit graceful shutdown signal.
         std::future::pending::<()>().await;
     }
 }
@@ -202,6 +207,8 @@ async fn run_server(cli: Cli, store: RepoStore) -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     info!(%addr, "server listening");
 
+    // Run signal handling independently so the server can continue serving until the
+    // shutdown sequence explicitly flips readiness and releases the graceful receiver.
     tokio::spawn(shutdown_sequence(state, shutdown_tx, graceful_tx));
 
     axum::serve(listener, app)

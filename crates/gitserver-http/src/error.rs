@@ -7,6 +7,8 @@ use serde::Serialize;
 
 use gitserver_core::error::Error as CoreError;
 
+pub const SHUTTING_DOWN_MESSAGE: &str = "server is shutting down";
+
 #[derive(Debug)]
 pub enum AppError {
     NotFound(String),
@@ -119,13 +121,13 @@ mod tests {
 
     #[tokio::test]
     async fn service_unavailable_returns_503_json() {
-        let err = AppError::ServiceUnavailable("server is shutting down".to_string());
+        let err = AppError::ServiceUnavailable(SHUTTING_DOWN_MESSAGE.to_string());
         let response = err.into_response();
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
 
         let json = read_body_json(response.into_body()).await;
         assert_eq!(json["error"], "service_unavailable");
-        assert_eq!(json["message"], "server is shutting down");
+        assert_eq!(json["message"], SHUTTING_DOWN_MESSAGE);
     }
 
     #[tokio::test]

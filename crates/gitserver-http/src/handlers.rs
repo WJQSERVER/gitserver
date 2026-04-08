@@ -14,7 +14,10 @@ use tokio_util::io::{ReaderStream, StreamReader};
 
 use gitserver_core::{backend::GitBackend, discovery::RepoInfo};
 
-use crate::{SharedState, error::AppError};
+use crate::{
+    SharedState,
+    error::{AppError, SHUTTING_DOWN_MESSAGE},
+};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum ServiceKind {
@@ -162,9 +165,7 @@ fn require_auth(store: &SharedState, headers: &HeaderMap) -> Result<(), AppError
 
 fn reject_if_draining(store: &SharedState) -> Result<(), AppError> {
     if store.is_draining() {
-        Err(AppError::ServiceUnavailable(
-            "server is shutting down".into(),
-        ))
+        Err(AppError::ServiceUnavailable(SHUTTING_DOWN_MESSAGE.into()))
     } else {
         Ok(())
     }
@@ -310,7 +311,6 @@ pub async fn rpc_endpoint(
     headers: HeaderMap,
     request: Bytes,
 ) -> Result<Response, AppError> {
-    reject_if_draining(store)?;
     match service {
         ServiceKind::UploadPack if !store.policy().upload_pack => {
             return Err(AppError::NotFound(format!(
