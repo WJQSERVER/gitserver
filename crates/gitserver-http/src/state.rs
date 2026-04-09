@@ -177,10 +177,12 @@ impl SharedState {
     }
 
     pub fn start_shutdown(&self) {
-        self.draining.store(true, Ordering::Relaxed);
+        // Keep the request-path check as a single atomic read while making the
+        // draining transition explicit across worker threads.
+        self.draining.store(true, Ordering::Release);
     }
 
     pub fn is_draining(&self) -> bool {
-        self.draining.load(Ordering::Relaxed)
+        self.draining.load(Ordering::Acquire)
     }
 }
