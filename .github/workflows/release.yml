@@ -106,8 +106,12 @@ jobs:
           crate_version_published() {
             local crate="$1"
             local version="$2"
-            curl -fsSL "https://crates.io/api/v1/crates/${crate}" \
-              | jq -e --arg version "$version" '.versions[].num == $version' >/dev/null
+
+            (
+              cd "$RUNNER_TEMP"
+              unset CARGO_REGISTRY_TOKEN
+              cargo info --registry crates-io "${crate}@${version}" >/dev/null 2>&1
+            )
           }
 
           wait_for_crate_version() {
