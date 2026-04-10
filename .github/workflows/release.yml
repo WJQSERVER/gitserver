@@ -74,18 +74,74 @@ jobs:
     name: Publish to crates.io
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo publish -p gitserver-core
+      - name: Verify tag matches crate versions
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          metadata=$(cargo metadata --no-deps --format-version 1)
+          for crate in gitserver-core gitserver-http gitserver; do
+            crate_version=$(jq -r --arg crate "$crate" '.packages[] | select(.name == $crate) | .version' <<<"$metadata")
+            if [ "$crate_version" != "$VERSION" ]; then
+              echo "tag version $VERSION does not match $crate version $crate_version" >&2
+              exit 1
+            fi
+          done
+
+      # Each published crate must trust this repository/workflow in crates.io.
+      - name: Authenticate to crates.io
+        id: auth
+        uses: rust-lang/crates-io-auth-action@v1
+
+      - name: Publish crates
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-      - run: sleep 30 && cargo publish -p gitserver-http
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-      - run: sleep 30 && cargo publish -p gitserver
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+
+          crate_version_published() {
+            local crate="$1"
+            local version="$2"
+            curl -fsSL "https://crates.io/api/v1/crates/${crate}" \
+              | jq -e --arg version "$version" '.versions[].num == $version' >/dev/null
+          }
+
+          wait_for_crate_version() {
+            local crate="$1"
+            local version="$2"
+            for attempt in $(seq 1 24); do
+              if crate_version_published "$crate" "$version"; then
+                echo "$crate $version is visible on crates.io"
+                return 0
+              fi
+
+              echo "waiting for $crate $version to appear on crates.io (attempt $attempt/24)"
+              sleep 10
+            done
+
+            echo "$crate $version did not appear on crates.io in time" >&2
+            return 1
+          }
+
+          publish_crate() {
+            local crate="$1"
+
+            if crate_version_published "$crate" "$VERSION"; then
+              echo "$crate $VERSION already published, skipping"
+              return 0
+            fi
+
+            cargo publish -p "$crate" --locked
+            wait_for_crate_version "$crate" "$VERSION"
+          }
+
+          publish_crate gitserver-core
+          publish_crate gitserver-http
+          publish_crate gitserver
 
   release:
     name: Release
