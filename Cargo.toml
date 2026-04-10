@@ -8,14 +8,14 @@ members = [
 ]
 
 [workspace.package]
-version = "0.0.1"
+version = "0.0.2"
 edition = "2024"
 license = "MPL-2.0"
 repository = "https://github.com/WJQSERVER/gitserver"
 
 [workspace.dependencies]
-gitserver-core = { path = "crates/gitserver-core", version = "0.0.1" }
-gitserver-http = { path = "crates/gitserver-http", version = "0.0.1" }
+gitserver-core = { path = "crates/gitserver-core", version = "0.0.2" }
+gitserver-http = { path = "crates/gitserver-http", version = "0.0.2" }
 gix = "0.80.0"
 axum = "0.8.8"
 tokio = { version = "1.50.0", features = ["full"] }
