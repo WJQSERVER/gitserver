@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1775840683297,
+  "lastUpdate": 1775841259705,
   "repoUrl": "https://github.com/WJQSERVER/gitserver",
   "entries": {
     "git-server Benchmarks": [
@@ -1453,6 +1453,138 @@ window.BENCHMARK_DATA = {
             "name": "ref_advertisement/advertise/large",
             "value": 353086,
             "range": "± 2533",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "114663932+WJQSERVER@users.noreply.github.com",
+            "name": "wjqserver",
+            "username": "WJQSERVER"
+          },
+          "committer": {
+            "email": "114663932+WJQSERVER@users.noreply.github.com",
+            "name": "wjqserver",
+            "username": "WJQSERVER"
+          },
+          "distinct": false,
+          "id": "f6cbc73318b0ffd680dd87944646012859eccdbb",
+          "message": "chore: prepare v0.0.3 release\n\nBump the workspace and published crate versions to 0.0.3 and refresh the lockfile for the next release tag.",
+          "timestamp": "2026-04-11T00:58:16+08:00",
+          "tree_id": "d1dbaa2e62d5280da7155f67a676486805f56b2e",
+          "url": "https://github.com/WJQSERVER/gitserver/commit/f6cbc73318b0ffd680dd87944646012859eccdbb"
+        },
+        "date": 1775841259422,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "concurrent_clones/clones/1",
+            "value": 102468938,
+            "range": "± 10323789",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "concurrent_clones/clones/2",
+            "value": 113574442,
+            "range": "± 9064075",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "concurrent_clones/clones/4",
+            "value": 157186639,
+            "range": "± 3978577",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "concurrent_clones/clones/8",
+            "value": 255721682,
+            "range": "± 8396533",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "concurrent_clones/clones/16",
+            "value": 470743749,
+            "range": "± 5409411",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "concurrent_clones/clones/32",
+            "value": 938440260,
+            "range": "± 8205703",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "git_clone/clone/small",
+            "value": 58149924,
+            "range": "± 1736824",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "git_clone/clone/medium",
+            "value": 102948010,
+            "range": "± 8817007",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "git_clone/clone/large",
+            "value": 1577827911,
+            "range": "± 26434830",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "http_clone/clone/small",
+            "value": 85758047,
+            "range": "± 10195550",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "http_clone/clone/medium",
+            "value": 120844197,
+            "range": "± 7823779",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "http_clone/clone/large",
+            "value": 1481747330,
+            "range": "± 3866952",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pack_generation/clone/small",
+            "value": 921536,
+            "range": "± 18392",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pack_generation/clone/medium",
+            "value": 27795385,
+            "range": "± 2589111",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pack_generation/clone/large",
+            "value": 1279245337,
+            "range": "± 18154121",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ref_advertisement/advertise/small",
+            "value": 205979,
+            "range": "± 1378",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ref_advertisement/advertise/medium",
+            "value": 267310,
+            "range": "± 2517",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ref_advertisement/advertise/large",
+            "value": 354375,
+            "range": "± 2438",
             "unit": "ns/iter"
           }
         ]
