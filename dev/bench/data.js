@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1775681636096,
+  "lastUpdate": 1775825220605,
   "repoUrl": "https://github.com/WJQSERVER/gitserver",
   "entries": {
     "git-server Benchmarks": [
@@ -925,6 +925,138 @@ window.BENCHMARK_DATA = {
             "name": "ref_advertisement/advertise/large",
             "value": 354990,
             "range": "± 2310",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "114663932+WJQSERVER@users.noreply.github.com",
+            "name": "WJQSERVER",
+            "username": "WJQSERVER"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c2f9fcd76166e81ec3ea5555c4ecf856d1c5fb3b",
+          "message": "Graceful shutdown with draining and hardening (#11)\n\n* feat: add graceful shutdown draining\n\nKeep in-flight Git transfers running while readiness flips to draining during shutdown.\n\n* fix: harden graceful shutdown draining\n\nReject new Git work as soon as draining starts and avoid shutting the server down when signal handler setup fails.\n\n* refactor: tighten shutdown review followups\n\nExtract the shared shutdown message, remove the redundant upload-pack draining check, and document subtle shutdown lifecycle edge cases.\n\n* fix: publish draining state across workers\n\nUse release/acquire ordering for the shutdown flag while keeping request-path checks as a single atomic read.",
+          "timestamp": "2026-04-10T20:26:07+08:00",
+          "tree_id": "90add680a169eb979812d80bdd06d1b78588af6c",
+          "url": "https://github.com/WJQSERVER/gitserver/commit/c2f9fcd76166e81ec3ea5555c4ecf856d1c5fb3b"
+        },
+        "date": 1775825219366,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "concurrent_clones/clones/1",
+            "value": 114162123,
+            "range": "± 8369611",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "concurrent_clones/clones/2",
+            "value": 154616926,
+            "range": "± 36274266",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "concurrent_clones/clones/4",
+            "value": 253180431,
+            "range": "± 8141390",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "concurrent_clones/clones/8",
+            "value": 455204233,
+            "range": "± 6826968",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "concurrent_clones/clones/16",
+            "value": 904827082,
+            "range": "± 8807370",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "concurrent_clones/clones/32",
+            "value": 1808930804,
+            "range": "± 28479751",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "git_clone/clone/small",
+            "value": 59992354,
+            "range": "± 1173960",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "git_clone/clone/medium",
+            "value": 113614383,
+            "range": "± 6632154",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "git_clone/clone/large",
+            "value": 1875184788,
+            "range": "± 23251403",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "http_clone/clone/small",
+            "value": 82064404,
+            "range": "± 5592491",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "http_clone/clone/medium",
+            "value": 123316763,
+            "range": "± 10231021",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "http_clone/clone/large",
+            "value": 1560145193,
+            "range": "± 6353587",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pack_generation/clone/small",
+            "value": 1130053,
+            "range": "± 33545",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pack_generation/clone/medium",
+            "value": 38415169,
+            "range": "± 2115090",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pack_generation/clone/large",
+            "value": 1453736040,
+            "range": "± 12422789",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ref_advertisement/advertise/small",
+            "value": 210323,
+            "range": "± 2258",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ref_advertisement/advertise/medium",
+            "value": 270950,
+            "range": "± 5168",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ref_advertisement/advertise/large",
+            "value": 365506,
+            "range": "± 4999",
             "unit": "ns/iter"
           }
         ]
