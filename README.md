@@ -47,7 +47,11 @@ async fn main() -> anyhow::Result<()> {
     let app = router(state);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await?;
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(async {
+            tokio::signal::ctrl_c().await.expect("install Ctrl+C handler");
+        })
+        .await?;
     Ok(())
 }
 ```
@@ -98,11 +102,13 @@ Options:
       --enable-receive-pack        Enable push support over git-receive-pack
 ```
 
+The standalone CLI performs graceful shutdown on `SIGINT`/`SIGTERM`: `/healthz` switches to `503` while the listener stops accepting new connections and in-flight Git requests are allowed to finish draining.
+
 ## API
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/healthz` | Health check endpoint |
+| GET | `/healthz` | Health check endpoint; returns `503` while draining during graceful shutdown |
 | GET | `/` | JSON array of available repositories |
 | GET | `/{repo}/info/refs?service=git-upload-pack` | Git ref advertisement |
 | GET | `/{repo}/info/refs?service=git-receive-pack` | Git receive-pack advertisement, disabled by default |

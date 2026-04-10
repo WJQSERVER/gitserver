@@ -32,11 +32,17 @@ async fn main() -> anyhow::Result<()> {
 
     // Start serving
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await?;
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(async {
+            tokio::signal::ctrl_c().await.expect("install Ctrl+C handler");
+        })
+        .await?;
 
     Ok(())
 }
 ```
+
+If you expose `GET /healthz`, it returns `200` during normal operation and `503` after you mark the shared state as draining with `SharedState::start_shutdown()`. This lets a parent application coordinate readiness changes before waiting for in-flight requests to finish.
 
 ## Configure Authentication
 

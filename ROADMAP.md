@@ -34,7 +34,7 @@ Operational features for running at scale.
 - [x] Hot-reload of repository list (watch filesystem or periodic rescan)
 - [x] Health check endpoint (`GET /healthz`)
 - [ ] Prometheus metrics (request count, latency, pack size, active connections)
-- [ ] Graceful shutdown with in-flight request draining
+- [x] Graceful shutdown with in-flight request draining
 - [ ] Configuration file (TOML) as alternative to CLI flags
 - [ ] Request timeout and max pack size limits
 

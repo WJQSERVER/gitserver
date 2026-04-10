@@ -10,6 +10,8 @@ GET /healthz
 
 轻量级就绪/存活探针. 不需要认证.
 
+正常运行时返回 `200 OK` 和 `{"status":"ok"}`. 当服务开始优雅关闭时, 会返回 `503 Service Unavailable` 和 `{"status":"shutting_down"}`, 以便外部负载均衡器停止发送新流量, 同时允许已在进行中的 Git 请求继续排空完成.
+
 **响应:**
 
 ```json

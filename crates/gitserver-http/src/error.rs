@@ -7,11 +7,14 @@ use serde::Serialize;
 
 use gitserver_core::error::Error as CoreError;
 
+pub const SHUTTING_DOWN_MESSAGE: &str = "server is shutting down";
+
 #[derive(Debug)]
 pub enum AppError {
     NotFound(String),
     BadRequest(String),
     Unauthorized,
+    ServiceUnavailable(String),
     Internal(String),
 }
 
@@ -32,6 +35,9 @@ impl IntoResponse for AppError {
                 "unauthorized",
                 "authentication required".to_string(),
             ),
+            Self::ServiceUnavailable(msg) => {
+                (StatusCode::SERVICE_UNAVAILABLE, "service_unavailable", msg)
+            }
             Self::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, "internal_error", msg),
         };
         let mut response = (
@@ -111,6 +117,17 @@ mod tests {
         let json = read_body_json(response.into_body()).await;
         assert_eq!(json["error"], "internal_error");
         assert_eq!(json["message"], "something went wrong");
+    }
+
+    #[tokio::test]
+    async fn service_unavailable_returns_503_json() {
+        let err = AppError::ServiceUnavailable(SHUTTING_DOWN_MESSAGE.to_string());
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+        let json = read_body_json(response.into_body()).await;
+        assert_eq!(json["error"], "service_unavailable");
+        assert_eq!(json["message"], SHUTTING_DOWN_MESSAGE);
     }
 
     #[tokio::test]

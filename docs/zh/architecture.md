@@ -54,6 +54,7 @@ CLI 二进制入口, 负责:
 - 构建 `SharedState` 和 Axum 路由
 - 启动后台定期重新扫描任务
 - 绑定 TCP 监听器并服务
+- 处理 `SIGINT`/`SIGTERM`, 将 readiness 切换到 draining, 并等待进行中的请求完成
 
 ### gitserver-bench
 

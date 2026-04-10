@@ -12,6 +12,7 @@ use gitserver_core::discovery::RepoStore;
 /// A test HTTP server that serves git repositories via the gitserver-http router.
 pub struct TestServer {
     pub addr: SocketAddr,
+    state: gitserver_http::SharedState,
     shutdown_tx: Option<oneshot::Sender<()>>,
     handle: Option<tokio::task::JoinHandle<()>>,
     refresh_handle: Option<tokio::task::JoinHandle<()>>,
@@ -48,6 +49,7 @@ impl TestServer {
 
     async fn start_with_state(state: gitserver_http::SharedState) -> Self {
         let router = gitserver_http::router(state.clone());
+        let refresh_state = state.clone();
 
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
@@ -62,7 +64,7 @@ impl TestServer {
             interval.tick().await;
             loop {
                 interval.tick().await;
-                if let Err(err) = state.refresh().await {
+                if let Err(err) = refresh_state.refresh().await {
                     eprintln!("test refresh failed: {err}");
                 }
             }
@@ -79,6 +81,7 @@ impl TestServer {
 
         Self {
             addr,
+            state,
             shutdown_tx: Some(shutdown_tx),
             handle: Some(handle),
             refresh_handle: Some(refresh_handle),
@@ -90,11 +93,19 @@ impl TestServer {
         format!("http://{}/{}", self.addr, repo)
     }
 
+    pub fn mark_draining(&self) {
+        self.state.start_shutdown();
+    }
+
     /// Gracefully shut down the server.
-    pub async fn stop(mut self) {
+    pub fn begin_shutdown(&mut self) {
+        self.mark_draining();
         if let Some(tx) = self.shutdown_tx.take() {
             let _ = tx.send(());
         }
+    }
+
+    pub async fn wait_for_exit(&mut self) {
         if let Some(handle) = self.handle.take() {
             let _ = handle.await;
         }
@@ -102,6 +113,11 @@ impl TestServer {
             refresh_handle.abort();
             let _ = refresh_handle.await;
         }
+    }
+
+    pub async fn stop(mut self) {
+        self.begin_shutdown();
+        self.wait_for_exit().await;
     }
 }
 
