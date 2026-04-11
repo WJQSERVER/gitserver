@@ -21,14 +21,22 @@ pub struct TestServer {
 impl TestServer {
     /// Start a test server serving repositories discovered under `root`.
     pub async fn start(root: &Path) -> Self {
-        let store = RepoStore::discover(root.to_path_buf(), 0).expect("discover repos");
-        let state = gitserver_http::SharedState::with_store_and_auth_policy(
-            store,
-            gitserver_http::AuthConfig::default(),
+        Self::start_with_policy(
+            root,
             gitserver_http::ServicePolicy {
                 receive_pack: true,
                 ..Default::default()
             },
+        )
+        .await
+    }
+
+    pub async fn start_with_policy(root: &Path, policy: gitserver_http::ServicePolicy) -> Self {
+        let store = RepoStore::discover(root.to_path_buf(), 0).expect("discover repos");
+        let state = gitserver_http::SharedState::with_store_and_auth_policy(
+            store,
+            gitserver_http::AuthConfig::default(),
+            policy,
         );
         Self::start_with_state(state).await
     }

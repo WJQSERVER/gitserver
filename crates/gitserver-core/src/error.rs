@@ -17,6 +17,9 @@ pub enum Error {
     #[error("git operation failed: {0}")]
     Git(Box<gix::open::Error>),
 
+    #[error("pack size {actual} exceeds configured limit {limit}")]
+    PackTooLarge { limit: u64, actual: u64 },
+
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 }

@@ -78,6 +78,8 @@ Returns the Git ref advertisement used for the initial handshake in `git clone` 
 POST /{repo}/git-upload-pack
 ```
 
+Streams clone/fetch pack data. When `--max-pack-bytes` is configured, requests whose estimated uncompressed pack output exceeds the limit return `413 Payload Too Large`. If request body upload or server-side handling exceeds `--request-timeout-secs`, the server returns `408 Request Timeout`.
+
 Handles the client's pack request, generating and returning a Git pack file containing the requested objects.
 
 **Request Headers:**

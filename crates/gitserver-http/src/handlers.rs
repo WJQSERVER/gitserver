@@ -12,7 +12,10 @@ use subtle::ConstantTimeEq;
 use tokio_stream::StreamExt;
 use tokio_util::io::{ReaderStream, StreamReader};
 
-use gitserver_core::{backend::GitBackend, discovery::RepoInfo};
+use gitserver_core::{
+    backend::{GitBackend, UploadPackLimits},
+    discovery::RepoInfo,
+};
 
 use crate::{
     SharedState,
@@ -286,9 +289,9 @@ pub async fn rpc_dispatch(
                 "service disabled: git-upload-pack".into(),
             ));
         }
-        let request = body
-            .collect()
+        let request = tokio::time::timeout(store.policy().request_timeout, body.collect())
             .await
+            .map_err(|_| AppError::RequestTimeout("upload-pack timed out".into()))?
             .map_err(|e| AppError::BadRequest(format!("failed to read upload-pack request: {e}")))?
             .to_bytes();
         rpc_endpoint(&store, repo_path, ServiceKind::UploadPack, headers, request).await
@@ -352,6 +355,9 @@ async fn upload_pack_inner(
     require_auth(store, &headers)?;
     let repo_info = store.resolve(repo_path).await?;
     let backend = GitBackend::new(repo_info.absolute_path.clone());
+    let limits = UploadPackLimits {
+        max_pack_bytes: store.policy().max_pack_bytes,
+    };
 
     if is_protocol_v2(&headers) {
         if !store.policy().upload_pack_v2 {
@@ -359,13 +365,26 @@ async fn upload_pack_inner(
                 "service disabled: git-upload-pack".into(),
             ));
         }
-        return upload_pack_v2(repo_info.absolute_path.as_path(), &backend, &request).await;
+        return upload_pack_v2(
+            repo_info.absolute_path.as_path(),
+            &backend,
+            &request,
+            limits,
+            store.policy().request_timeout,
+        )
+        .await;
     }
 
     let upload_request = gitserver_core::pack::UploadPackRequest::parse(&request)?;
-    let reader = backend.upload_pack(&upload_request).await.map_err(|e| {
+    let reader = tokio::time::timeout(
+        store.policy().request_timeout,
+        backend.upload_pack_with_limits(&upload_request, limits),
+    )
+    .await
+    .map_err(|_| AppError::RequestTimeout("upload-pack timed out".into()))?
+    .map_err(|e| {
         tracing::error!("pack generation failed: {e}");
-        AppError::Internal("internal server error".into())
+        AppError::from(e)
     })?;
     let stream = ReaderStream::new(reader);
     Ok(Response::builder()
@@ -393,6 +412,20 @@ async fn receive_pack_streaming_endpoint(
 ) -> Result<Response, AppError> {
     reject_if_draining(store)?;
 
+    tokio::time::timeout(
+        store.policy().request_timeout,
+        receive_pack_streaming_endpoint_inner(store, repo_path, headers, request_body),
+    )
+    .await
+    .map_err(|_| AppError::RequestTimeout("receive-pack timed out".into()))?
+}
+
+async fn receive_pack_streaming_endpoint_inner(
+    store: &SharedState,
+    repo_path: &str,
+    headers: HeaderMap,
+    request_body: Body,
+) -> Result<Response, AppError> {
     let content_type = headers
         .get(header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
@@ -410,7 +443,9 @@ async fn receive_pack_streaming_endpoint(
         .into_data_stream()
         .map(|result| result.map_err(std::io::Error::other));
     let request_reader = StreamReader::new(request_stream);
-    let body = backend.receive_pack(request_reader).await?;
+    let body = backend
+        .receive_pack_with_timeout(request_reader, store.policy().request_timeout)
+        .await?;
 
     Ok(Response::builder()
         .status(StatusCode::OK)
@@ -427,6 +462,8 @@ async fn upload_pack_v2(
     repo_path: &std::path::Path,
     backend: &GitBackend,
     request: &[u8],
+    limits: UploadPackLimits,
+    timeout: std::time::Duration,
 ) -> Result<Response, AppError> {
     match gitserver_core::protocol_v2::parse_command_request(request)? {
         gitserver_core::protocol_v2::Command::LsRefs(req) => Ok(Response::builder()
@@ -457,13 +494,16 @@ async fn upload_pack_v2(
                     .unwrap());
             }
 
-            let reader = backend
-                .upload_pack(&req.upload_request)
-                .await
-                .map_err(|e| {
-                    tracing::error!("pack generation failed: {e}");
-                    AppError::Internal("internal server error".into())
-                })?;
+            let reader = tokio::time::timeout(
+                timeout,
+                backend.upload_pack_with_limits(&req.upload_request, limits),
+            )
+            .await
+            .map_err(|_| AppError::RequestTimeout("upload-pack timed out".into()))?
+            .map_err(|e| {
+                tracing::error!("pack generation failed: {e}");
+                AppError::from(e)
+            })?;
 
             let mut body = if is_shallow_negotiation
                 && !req.upload_request.haves.is_empty()
@@ -524,6 +564,55 @@ mod tests {
 
     fn test_store(tmp: &TempDir) -> RepoStore {
         create_bare_repo(&tmp.path().join("test.git"));
+        RepoStore::discover(tmp.path().to_path_buf(), 0).unwrap()
+    }
+
+    fn create_bare_repo_with_commit(tmp: &TempDir) -> RepoStore {
+        let repo_path = tmp.path().join("test.git");
+        let work_dir = tmp.path().join("work");
+        std::fs::create_dir(&work_dir).unwrap();
+
+        let out = Command::new("git")
+            .args(["init", "--bare", repo_path.to_str().unwrap()])
+            .output()
+            .expect("git init --bare failed");
+        assert!(out.status.success());
+
+        let out = Command::new("git")
+            .args(["symbolic-ref", "HEAD", "refs/heads/main"])
+            .current_dir(&repo_path)
+            .output()
+            .expect("git symbolic-ref failed");
+        assert!(out.status.success());
+
+        let out = Command::new("git")
+            .args([
+                "clone",
+                repo_path.to_str().unwrap(),
+                work_dir.to_str().unwrap(),
+            ])
+            .output()
+            .expect("git clone failed");
+        assert!(out.status.success());
+
+        let out = Command::new("git")
+            .args(["commit", "--allow-empty", "-m", "init"])
+            .current_dir(&work_dir)
+            .env("GIT_AUTHOR_NAME", "Test User")
+            .env("GIT_AUTHOR_EMAIL", "test@test.com")
+            .env("GIT_COMMITTER_NAME", "Test User")
+            .env("GIT_COMMITTER_EMAIL", "test@test.com")
+            .output()
+            .expect("git commit failed");
+        assert!(out.status.success());
+
+        let out = Command::new("git")
+            .args(["push", "origin", "main"])
+            .current_dir(&work_dir)
+            .output()
+            .expect("git push failed");
+        assert!(out.status.success());
+
         RepoStore::discover(tmp.path().to_path_buf(), 0).unwrap()
     }
 
@@ -813,6 +902,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn upload_pack_returns_413_when_pack_exceeds_limit() {
+        let tmp = TempDir::new().unwrap();
+        let repo_path = tmp.path().join("test.git");
+        let store = create_bare_repo_with_commit(&tmp);
+        let head_oid = {
+            let repo = gix::open(repo_path).unwrap();
+            repo.head_id().unwrap().detach().to_string()
+        };
+        let state = crate::SharedState::with_store_and_auth_policy(
+            store,
+            crate::AuthConfig::default(),
+            crate::ServicePolicy {
+                max_pack_bytes: Some(1),
+                ..Default::default()
+            },
+        );
+        let app = router(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/test.git/git-upload-pack")
+                    .header("content-type", "application/x-git-upload-pack-request")
+                    .body(Body::from(
+                        [
+                            format!("0032want {head_oid}\n").into_bytes(),
+                            b"0000".to_vec(),
+                            b"0009done\n".to_vec(),
+                        ]
+                        .concat(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["error"], "payload_too_large");
+    }
+
+    #[tokio::test]
     async fn info_refs_requires_auth_when_configured() {
         let tmp = TempDir::new().unwrap();
         let store = test_store(&tmp);
@@ -916,6 +1050,7 @@ mod tests {
                 upload_pack: true,
                 upload_pack_v2: true,
                 receive_pack: false,
+                ..Default::default()
             },
         );
 
@@ -942,6 +1077,7 @@ mod tests {
                 upload_pack: true,
                 upload_pack_v2: true,
                 receive_pack: false,
+                ..Default::default()
             },
         );
 
@@ -980,6 +1116,7 @@ mod tests {
                 upload_pack: true,
                 upload_pack_v2: true,
                 receive_pack: false,
+                ..Default::default()
             },
         );
 
