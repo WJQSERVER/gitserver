@@ -63,6 +63,14 @@ struct Cli {
     /// Enable git-receive-pack and allow push operations.
     #[arg(long, default_value_t = false)]
     enable_receive_pack: bool,
+
+    /// Timeout for upload-pack and receive-pack requests in seconds.
+    #[arg(long, default_value_t = 300)]
+    request_timeout_secs: u64,
+
+    /// Maximum uncompressed pack bytes allowed for upload-pack responses.
+    #[arg(long)]
+    max_pack_bytes: Option<u64>,
 }
 
 #[derive(Clone, clap::ValueEnum)]
@@ -195,6 +203,8 @@ async fn run_server(cli: Cli, store: RepoStore) -> anyhow::Result<()> {
         auth,
         gitserver_http::ServicePolicy {
             receive_pack: cli.enable_receive_pack,
+            request_timeout: Duration::from_secs(cli.request_timeout_secs),
+            max_pack_bytes: cli.max_pack_bytes,
             ..Default::default()
         },
     );

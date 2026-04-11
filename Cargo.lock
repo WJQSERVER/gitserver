@@ -812,6 +812,7 @@ dependencies = [
  "gitserver-core",
  "gix",
  "gix-pack",
+ "http-body",
  "http-body-util",
  "reqwest",
  "serde",

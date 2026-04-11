@@ -36,7 +36,7 @@ Operational features for running at scale.
 - [ ] Prometheus metrics (request count, latency, pack size, active connections)
 - [x] Graceful shutdown with in-flight request draining
 - [ ] Configuration file (TOML) as alternative to CLI flags
-- [ ] Request timeout and max pack size limits
+- [x] Request timeout and max pack size limits
 
 ## v0.4 -- Write support
 

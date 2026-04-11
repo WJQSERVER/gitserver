@@ -14,6 +14,11 @@ use crate::pack::UploadPackRequest;
 pub const RECEIVE_PACK_TIMEOUT: Duration = Duration::from_secs(300);
 const RECEIVE_PACK_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct UploadPackLimits {
+    pub max_pack_bytes: Option<u64>,
+}
+
 struct TimedAsyncRead<R> {
     inner: R,
     timeout: Duration,
@@ -94,7 +99,37 @@ impl GitBackend {
     }
 
     pub async fn upload_pack(&self, request: &UploadPackRequest) -> Result<impl AsyncRead + use<>> {
+        self.upload_pack_with_limits(request, UploadPackLimits::default())
+            .await
+    }
+
+    pub async fn upload_pack_with_limits(
+        &self,
+        request: &UploadPackRequest,
+        limits: UploadPackLimits,
+    ) -> Result<impl AsyncRead + Send + Unpin + use<>> {
+        self.check_pack_size_limit(request, limits.max_pack_bytes)?;
         crate::pack::generate_pack(&self.repo_path, request)
+    }
+
+    fn check_pack_size_limit(
+        &self,
+        request: &UploadPackRequest,
+        max_pack_bytes: Option<u64>,
+    ) -> Result<()> {
+        let Some(limit) = max_pack_bytes else {
+            return Ok(());
+        };
+
+        let size = crate::pack::estimate_pack_size(&self.repo_path, request)?;
+        if size > limit {
+            return Err(crate::error::Error::PackTooLarge {
+                limit,
+                actual: size,
+            });
+        }
+
+        Ok(())
     }
 
     pub async fn receive_pack<R>(&self, request: R) -> Result<Vec<u8>>
@@ -105,7 +140,7 @@ impl GitBackend {
             .await
     }
 
-    async fn receive_pack_with_timeout<R>(
+    pub async fn receive_pack_with_timeout<R>(
         &self,
         request: R,
         timeout_duration: Duration,

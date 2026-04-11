@@ -24,6 +24,7 @@ pub struct ShallowRequest {
 }
 
 /// A parsed upload-pack request from a Git client.
+#[derive(Debug, Clone, Default)]
 pub struct UploadPackRequest {
     pub wants: Vec<gix::ObjectId>,
     pub haves: Vec<gix::ObjectId>,
@@ -472,6 +473,26 @@ fn common_haves(
         .copied()
         .filter(|oid| want_set.contains(oid))
         .collect())
+}
+
+pub fn estimate_pack_size(repo_path: &Path, request: &UploadPackRequest) -> Result<u64> {
+    let repo = gix::open(repo_path)?;
+    let oids = match &request.object_ids {
+        Some(oids) => oids.clone(),
+        None => collect_all_oids(&repo, &request.wants, &request.haves)
+            .map_err(|e| Error::Protocol(e.to_string()))?,
+    };
+
+    let mut total = 12_u64; // PACK header
+    for oid in oids {
+        let object = repo
+            .find_object(oid)
+            .map_err(|e| Error::Protocol(format!("failed to read object {oid}: {e}")))?;
+        total += object.data.len() as u64;
+    }
+
+    total += 20; // trailing checksum
+    Ok(total)
 }
 
 /// Generate the complete pack response for a Git upload-pack request.

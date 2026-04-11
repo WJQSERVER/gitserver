@@ -78,6 +78,8 @@ GET /{repo}/info/refs?service=git-receive-pack
 POST /{repo}/git-upload-pack
 ```
 
+该端点会流式返回 clone/fetch 所需的 pack 数据. 当配置了 `--max-pack-bytes` 时, 预估未压缩 pack 输出超过限制的请求会返回 `413 Payload Too Large`. 当请求体上传或服务端处理超过 `--request-timeout-secs` 时, 会返回 `408 Request Timeout`.
+
 处理客户端的包请求, 生成并返回包含所需对象的 Git pack 文件.
 
 **请求头:**

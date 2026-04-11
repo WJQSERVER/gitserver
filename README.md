@@ -96,10 +96,12 @@ Options:
   -w, --workers <N>              Number of Tokio worker threads
   --max-depth <N>            Max directory depth for repo discovery [default: 3]
       --rescan-interval-secs <N> Periodic rescan interval in seconds [default: 30]
-      --auth-basic-username <USER> Require HTTP Basic auth username
-      --auth-basic-password <PASS> Require HTTP Basic auth password
-      --auth-bearer-token <TOKEN>  Require Bearer auth token
-      --enable-receive-pack        Enable push support over git-receive-pack
+  --auth-basic-username <USER> Require HTTP Basic auth username
+  --auth-basic-password <PASS> Require HTTP Basic auth password
+  --auth-bearer-token <TOKEN>  Require Bearer auth token
+  --enable-receive-pack        Enable push support over git-receive-pack
+  --request-timeout-secs <N>   Timeout for upload-pack and receive-pack requests [default: 300]
+  --max-pack-bytes <BYTES>     Maximum uncompressed pack bytes allowed for upload-pack responses
 ```
 
 The standalone CLI performs graceful shutdown on `SIGINT`/`SIGTERM`: `/healthz` switches to `503` while the listener stops accepting new connections and in-flight Git requests are allowed to finish draining.

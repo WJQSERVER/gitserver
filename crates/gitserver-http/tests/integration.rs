@@ -1,6 +1,10 @@
 mod helpers;
 
+use axum::body::Bytes;
+use futures_util::StreamExt;
 use gitserver_core::discovery::MutableRepoRegistry;
+use http_body::Frame;
+use http_body_util::StreamBody;
 use std::io::Cursor;
 use std::io::Read;
 use std::path::Path;
@@ -513,6 +517,42 @@ async fn upload_pack_streams_large_responses() {
         body.windows(4).any(|window| window == b"PACK"),
         "streamed response should contain pack data"
     );
+
+    server.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn upload_pack_returns_413_when_pack_exceeds_limit() {
+    let root = TempDir::new().unwrap();
+    let bare_path = create_bare_repo_with_commits(root.path(), "limited.git", 1);
+    add_large_commit(&bare_path);
+    let head_oid = repo_head_oid(&bare_path);
+
+    let server = TestServer::start_with_policy(
+        root.path(),
+        gitserver_http::ServicePolicy {
+            receive_pack: true,
+            max_pack_bytes: Some(1024),
+            ..Default::default()
+        },
+    )
+    .await;
+
+    let mut request_body = make_pktline(&format!("want {head_oid}\n"));
+    request_body.extend_from_slice(b"0000");
+    request_body.extend_from_slice(b"0009done\n");
+
+    let response = reqwest::Client::new()
+        .post(server.url("limited.git/git-upload-pack"))
+        .header("content-type", "application/x-git-upload-pack-request")
+        .body(request_body)
+        .send()
+        .await
+        .expect("POST limited git-upload-pack");
+
+    assert_eq!(response.status(), 413);
+    let json: serde_json::Value = response.json().await.expect("parse 413 json");
+    assert_eq!(json["error"], "payload_too_large");
 
     server.stop().await;
 }
@@ -1832,6 +1872,7 @@ async fn dynamic_registry_can_register_and_unregister_repo_paths() {
             upload_pack: true,
             upload_pack_v2: true,
             receive_pack: false,
+            ..Default::default()
         },
     );
 
@@ -1924,6 +1965,7 @@ async fn dynamic_registry_rejects_parent_relative_paths() {
             upload_pack: true,
             upload_pack_v2: true,
             receive_pack: false,
+            ..Default::default()
         },
     );
 
@@ -1956,6 +1998,7 @@ async fn upload_pack_v2_is_disabled_by_policy() {
             upload_pack: true,
             upload_pack_v2: false,
             receive_pack: false,
+            ..Default::default()
         },
     );
 
@@ -2146,6 +2189,79 @@ async fn git_push_is_rejected_while_draining() {
 
     server.begin_shutdown();
     server.wait_for_exit().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn receive_pack_returns_408_when_request_times_out() {
+    let root = TempDir::new().unwrap();
+    create_bare_repo_with_commits(root.path(), "timeout.git", 1);
+
+    let server = TestServer::start_with_policy(
+        root.path(),
+        gitserver_http::ServicePolicy {
+            receive_pack: true,
+            request_timeout: std::time::Duration::from_millis(50),
+            ..Default::default()
+        },
+    )
+    .await;
+
+    let hanging_stream = futures_util::stream::iter([Ok(Bytes::from_static(b"0008junk"))])
+        .chain(futures_util::stream::pending())
+        .map(|item: Result<Bytes, std::io::Error>| item.map(Frame::data));
+    let hanging_body = reqwest::Body::wrap(StreamBody::new(hanging_stream));
+
+    let response = reqwest::Client::new()
+        .post(server.url("timeout.git/git-receive-pack"))
+        .header("content-type", "application/x-git-receive-pack-request")
+        .body(hanging_body)
+        .send()
+        .await
+        .expect("POST timed receive-pack");
+
+    assert_eq!(response.status(), 408);
+    let json: serde_json::Value = response.json().await.expect("parse 408 json");
+    assert_eq!(json["error"], "request_timeout");
+
+    server.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn upload_pack_returns_408_when_request_body_stalls() {
+    let root = TempDir::new().unwrap();
+    create_bare_repo_with_commits(root.path(), "timeout.git", 1);
+
+    let server = TestServer::start_with_policy(
+        root.path(),
+        gitserver_http::ServicePolicy {
+            receive_pack: true,
+            request_timeout: std::time::Duration::from_millis(50),
+            ..Default::default()
+        },
+    )
+    .await;
+
+    let hanging_stream = futures_util::stream::iter([Ok(Bytes::from_static(b"0008want"))])
+        .chain(futures_util::stream::pending())
+        .map(|item: Result<Bytes, std::io::Error>| item.map(Frame::data));
+    let hanging_body = reqwest::Body::wrap(StreamBody::new(hanging_stream));
+
+    let response = reqwest::Client::new()
+        .post(server.url("timeout.git/git-upload-pack"))
+        .header("content-type", "application/x-git-upload-pack-request")
+        .body(hanging_body)
+        .send()
+        .await
+        .expect("POST timed upload-pack");
+
+    assert_eq!(response.status(), 408);
+    let json: serde_json::Value = response
+        .json()
+        .await
+        .expect("parse upload-pack timeout json");
+    assert_eq!(json["error"], "request_timeout");
+
+    server.stop().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -104,6 +104,8 @@ gitserver [OPTIONS] <ROOT>
   --auth-basic-password <PASS>  要求 HTTP Basic 认证密码
   --auth-bearer-token <TOKEN>   要求 Bearer 认证令牌
   --enable-receive-pack         启用 git-receive-pack, 允许 push
+  --request-timeout-secs <N>    upload-pack 和 receive-pack 请求超时时间(秒) [默认值: 300]
+  --max-pack-bytes <BYTES>      upload-pack 响应允许的未压缩 pack 最大字节数
 ```
 
 独立 CLI 在收到 `SIGINT`/`SIGTERM` 后会执行优雅关闭: `/healthz` 会切换为 `503`, listener 停止接受新连接, 已在进行中的 Git 请求会继续排空完成.

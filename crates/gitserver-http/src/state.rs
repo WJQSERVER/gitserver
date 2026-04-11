@@ -8,6 +8,7 @@ use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
+use std::time::Duration;
 
 use gitserver_core::discovery::{
     DynamicRepoRegistry, MutableRepoRegistry, RepoResolver, RepoStore,
@@ -48,6 +49,8 @@ pub struct ServicePolicy {
     pub upload_pack: bool,
     pub upload_pack_v2: bool,
     pub receive_pack: bool,
+    pub request_timeout: Duration,
+    pub max_pack_bytes: Option<u64>,
 }
 
 impl Default for ServicePolicy {
@@ -56,6 +59,8 @@ impl Default for ServicePolicy {
             upload_pack: true,
             upload_pack_v2: true,
             receive_pack: false,
+            request_timeout: Duration::from_secs(300),
+            max_pack_bytes: None,
         }
     }
 }

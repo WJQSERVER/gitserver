@@ -31,6 +31,8 @@ gitserver [OPTIONS] <ROOT>
 | `--auth-basic-password <PASS>` | - | - | HTTP Basic 认证密码(需配合 `--auth-basic-username`) |
 | `--auth-bearer-token <TOKEN>` | - | - | Bearer 认证令牌 |
 | `--enable-receive-pack` | - | `false` | 启用 git-receive-pack, 允许 push 操作 |
+| `--request-timeout-secs <N>` | - | `300` | upload-pack 和 receive-pack 请求的超时时间(秒) |
+| `--max-pack-bytes <BYTES>` | - | - | 超过该未压缩大小的 upload-pack 响应会被拒绝 |
 
 ## 示例
 
@@ -67,6 +69,16 @@ gitserver --enable-receive-pack ./repos
 ```
 
 > 注意: push 操作默认禁用. 启用后, 服务器仅接受 fast-forward 更新, 不允许删除引用或覆盖已有标签.
+
+### 配置限制
+
+```sh
+# 拒绝会返回超过 512 MiB pack 数据的 clone/fetch 请求
+gitserver --max-pack-bytes $((512 * 1024 * 1024)) ./repos
+
+# 在 2 分钟后终止卡住或过长的 fetch/push 请求
+gitserver --request-timeout-secs 120 ./repos
+```
 
 ### 克隆和获取
 

@@ -15,6 +15,8 @@ pub enum AppError {
     BadRequest(String),
     Unauthorized,
     ServiceUnavailable(String),
+    RequestTimeout(String),
+    PayloadTooLarge(String),
     Internal(String),
 }
 
@@ -38,6 +40,8 @@ impl IntoResponse for AppError {
             Self::ServiceUnavailable(msg) => {
                 (StatusCode::SERVICE_UNAVAILABLE, "service_unavailable", msg)
             }
+            Self::RequestTimeout(msg) => (StatusCode::REQUEST_TIMEOUT, "request_timeout", msg),
+            Self::PayloadTooLarge(msg) => (StatusCode::PAYLOAD_TOO_LARGE, "payload_too_large", msg),
             Self::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, "internal_error", msg),
         };
         let mut response = (
@@ -66,6 +70,10 @@ impl From<CoreError> for AppError {
             CoreError::RepoNotFound(_) => Self::NotFound(err.to_string()),
             CoreError::PathTraversal(_) | CoreError::Protocol(_) => {
                 Self::BadRequest(err.to_string())
+            }
+            CoreError::PackTooLarge { .. } => Self::PayloadTooLarge(err.to_string()),
+            CoreError::Io(inner) if inner.kind() == std::io::ErrorKind::TimedOut => {
+                Self::RequestTimeout(err.to_string())
             }
             _ => {
                 tracing::error!("internal error: {err}");
@@ -128,6 +136,28 @@ mod tests {
         let json = read_body_json(response.into_body()).await;
         assert_eq!(json["error"], "service_unavailable");
         assert_eq!(json["message"], SHUTTING_DOWN_MESSAGE);
+    }
+
+    #[tokio::test]
+    async fn request_timeout_returns_408_json() {
+        let err = AppError::RequestTimeout("upload-pack timed out".to_string());
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::REQUEST_TIMEOUT);
+
+        let json = read_body_json(response.into_body()).await;
+        assert_eq!(json["error"], "request_timeout");
+        assert_eq!(json["message"], "upload-pack timed out");
+    }
+
+    #[tokio::test]
+    async fn payload_too_large_returns_413_json() {
+        let err = AppError::PayloadTooLarge("pack exceeds limit".to_string());
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+
+        let json = read_body_json(response.into_body()).await;
+        assert_eq!(json["error"], "payload_too_large");
+        assert_eq!(json["message"], "pack exceeds limit");
     }
 
     #[tokio::test]

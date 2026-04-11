@@ -31,6 +31,8 @@ gitserver [OPTIONS] <ROOT>
 | `--auth-basic-password <PASS>` | - | - | HTTP Basic auth password (requires `--auth-basic-username`) |
 | `--auth-bearer-token <TOKEN>` | - | - | Bearer auth token |
 | `--enable-receive-pack` | - | `false` | Enable git-receive-pack to allow push operations |
+| `--request-timeout-secs <N>` | - | `300` | Timeout in seconds for upload-pack and receive-pack requests |
+| `--max-pack-bytes <BYTES>` | - | - | Maximum uncompressed upload-pack bytes allowed before rejecting the request |
 
 ## Examples
 
@@ -67,6 +69,16 @@ gitserver --enable-receive-pack ./repos
 ```
 
 > Note: push operations are disabled by default. When enabled, the server only accepts fast-forward updates and does not allow ref deletion or overwriting existing tags.
+
+### Configure Limits
+
+```sh
+# Reject clone/fetch responses that would stream more than 512 MiB of pack data
+gitserver --max-pack-bytes $((512 * 1024 * 1024)) ./repos
+
+# Fail stalled or long-running fetch/push requests after 2 minutes
+gitserver --request-timeout-secs 120 ./repos
+```
 
 ### Clone and Fetch
 
