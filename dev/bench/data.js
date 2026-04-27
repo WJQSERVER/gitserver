@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1775841259705,
+  "lastUpdate": 1777297714426,
   "repoUrl": "https://github.com/WJQSERVER/gitserver",
   "entries": {
     "git-server Benchmarks": [
@@ -1585,6 +1585,138 @@ window.BENCHMARK_DATA = {
             "name": "ref_advertisement/advertise/large",
             "value": 354375,
             "range": "± 2438",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3cec05b02eea3220c67782e4d9d0404d8b001aa3",
+          "message": "build(deps): bump openssl from 0.10.76 to 0.10.78 (#17)\n\nBumps [openssl](https://github.com/rust-openssl/rust-openssl) from 0.10.76 to 0.10.78.\n- [Release notes](https://github.com/rust-openssl/rust-openssl/releases)\n- [Commits](https://github.com/rust-openssl/rust-openssl/compare/openssl-v0.10.76...openssl-v0.10.78)\n\n---\nupdated-dependencies:\n- dependency-name: openssl\n  dependency-version: 0.10.78\n  dependency-type: indirect\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2026-04-27T21:30:24+08:00",
+          "tree_id": "f703bead63debe14ea917fbc22f748d1a3122c8b",
+          "url": "https://github.com/WJQSERVER/gitserver/commit/3cec05b02eea3220c67782e4d9d0404d8b001aa3"
+        },
+        "date": 1777297713578,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "concurrent_clones/clones/1",
+            "value": 105109279,
+            "range": "± 12581463",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "concurrent_clones/clones/2",
+            "value": 115009794,
+            "range": "± 4762476",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "concurrent_clones/clones/4",
+            "value": 157264028,
+            "range": "± 4054849",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "concurrent_clones/clones/8",
+            "value": 255820001,
+            "range": "± 7123971",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "concurrent_clones/clones/16",
+            "value": 472781661,
+            "range": "± 6919190",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "concurrent_clones/clones/32",
+            "value": 939255816,
+            "range": "± 8953698",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "git_clone/clone/small",
+            "value": 59409500,
+            "range": "± 1992513",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "git_clone/clone/medium",
+            "value": 104110036,
+            "range": "± 8180529",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "git_clone/clone/large",
+            "value": 1590471979,
+            "range": "± 26394950",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "http_clone/clone/small",
+            "value": 83915959,
+            "range": "± 12968375",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "http_clone/clone/medium",
+            "value": 121009998,
+            "range": "± 10177686",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "http_clone/clone/large",
+            "value": 1482635926,
+            "range": "± 4875063",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pack_generation/clone/small",
+            "value": 983561,
+            "range": "± 27909",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pack_generation/clone/medium",
+            "value": 31879492,
+            "range": "± 3781067",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pack_generation/clone/large",
+            "value": 1264090750,
+            "range": "± 28525974",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ref_advertisement/advertise/small",
+            "value": 205396,
+            "range": "± 2739",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ref_advertisement/advertise/medium",
+            "value": 266585,
+            "range": "± 2636",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ref_advertisement/advertise/large",
+            "value": 352938,
+            "range": "± 2370",
             "unit": "ns/iter"
           }
         ]
